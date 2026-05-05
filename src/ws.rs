@@ -117,6 +117,22 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
             handle_leave_room(session).await;
             true
         }
+        ClientMessage::StartMatch
+        | ClientMessage::AbortHand
+        | ClientMessage::EndMatch
+        | ClientMessage::NextHand
+        | ClientMessage::SubmitAction { .. } => {
+            // Phase 3 サブステップ C で Room actor へルーティングする
+            let _ = send(
+                socket,
+                &error_msg(
+                    "not_implemented",
+                    "game progression is not wired to Room yet",
+                ),
+            )
+            .await;
+            true
+        }
     }
 }
 
