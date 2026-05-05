@@ -1,6 +1,7 @@
 mod auth;
 mod config;
 mod error;
+mod game_adapter;
 mod http;
 mod hub;
 mod protocol;
