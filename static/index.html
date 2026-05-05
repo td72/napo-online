@@ -710,6 +710,9 @@
           case "hand_redealt":
             log(`配り直し`, "info");
             break;
+          case "hand_aborted":
+            log(`★ 局中断(ホストが abort、scores 全0 で次局へ)`, "err");
+            break;
         }
       }
 

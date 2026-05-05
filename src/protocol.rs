@@ -146,6 +146,7 @@ pub enum PublicEvent {
         scores: Vec<i32>,
     },
     HandRedealt,
+    HandAborted,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
