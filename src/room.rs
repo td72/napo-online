@@ -12,8 +12,8 @@ use crate::db::{Db, GameOutcome, GameRecord};
 use crate::game_adapter::{ApplyOutcome, FinishedHandSummary, GameSession};
 use crate::now_unix;
 use crate::protocol::{
-    PlayerId, PlayerView, PublicEvent, RoomId, RoomPhase as WireRoomPhase, RoomView,
-    ServerMessage, WireAction,
+    PlayerId, PlayerView, PublicEvent, RoomId, RoomPhase as WireRoomPhase, RoomView, ServerMessage,
+    WireAction,
 };
 
 /// 永続化用のスナップショット。`napo_core::Match` を直接埋め込む(serde feature 必須)。
@@ -263,7 +263,11 @@ impl Room {
                 return;
             }
         };
-        if let Err(e) = self.db.save_room_snapshot(&self.id, &json, now_unix()).await {
+        if let Err(e) = self
+            .db
+            .save_room_snapshot(&self.id, &json, now_unix())
+            .await
+        {
             tracing::warn!(room = %self.id, error = %e, "save_room_snapshot failed");
         }
     }
@@ -614,11 +618,13 @@ impl Room {
             return;
         }
         let Some(session) = self.session.as_mut() else {
-            self.send_to(&by, error("wrong_phase", "no session to abort")).await;
+            self.send_to(&by, error("wrong_phase", "no session to abort"))
+                .await;
             return;
         };
         if let Err(e) = session.abandon_current_hand() {
-            self.send_to(&by, error("invalid_state", &e.to_string())).await;
+            self.send_to(&by, error("invalid_state", &e.to_string()))
+                .await;
             return;
         }
         let hand_scores: Vec<i32> = session

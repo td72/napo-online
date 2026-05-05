@@ -280,12 +280,7 @@ impl Db {
         .await?
     }
 
-    pub async fn upsert_user(
-        &self,
-        email: &str,
-        handle: &str,
-        now: i64,
-    ) -> Result<UpsertResult> {
+    pub async fn upsert_user(&self, email: &str, handle: &str, now: i64) -> Result<UpsertResult> {
         let conn = self.conn.clone();
         let email = email.to_string();
         let handle = handle.to_string();
@@ -391,11 +386,7 @@ impl Db {
 
     /// 終局済みの局を新しい順に最大 `limit` 件、`offset` 件スキップして返す。
     /// napoleon / adjutant / 各 player の handle は users テーブルとの LEFT JOIN で解決。
-    pub async fn list_recent_games(
-        &self,
-        limit: usize,
-        offset: usize,
-    ) -> Result<Vec<GameSummary>> {
+    pub async fn list_recent_games(&self, limit: usize, offset: usize) -> Result<Vec<GameSummary>> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<Vec<GameSummary>> {
             let conn = conn.lock().expect("db poisoned");
@@ -642,13 +633,13 @@ mod tests {
     async fn upsert_user_rejects_duplicate_handle_case_insensitive() {
         let db = fresh_db().await;
         db.upsert_user("a@x.com", "Alice", now()).await.unwrap();
-        let r = db
-            .upsert_user("b@x.com", "alice", now())
-            .await
-            .unwrap();
+        let r = db.upsert_user("b@x.com", "alice", now()).await.unwrap();
         assert_eq!(r, UpsertResult::HandleTaken);
         // a@x.com は影響なし
-        assert_eq!(db.get_user("a@x.com").await.unwrap().unwrap().handle, "Alice");
+        assert_eq!(
+            db.get_user("a@x.com").await.unwrap().unwrap().handle,
+            "Alice"
+        );
         // b@x.com は登録されていない
         assert!(db.get_user("b@x.com").await.unwrap().is_none());
     }

@@ -204,9 +204,10 @@ async fn non_host_start_match_rejected() {
 
     // bob (idx 1) が StartMatch
     send(&mut clients[1].0, &ClientMessage::StartMatch).await;
-    let m = wait_for(&mut clients[1].1, |m| {
-        matches!(m, ServerMessage::Error { code, .. } if code == "not_host")
-    })
+    let m = wait_for(
+        &mut clients[1].1,
+        |m| matches!(m, ServerMessage::Error { code, .. } if code == "not_host"),
+    )
     .await;
     if let ServerMessage::Error { code, .. } = m {
         assert_eq!(code, "not_host");
@@ -225,9 +226,10 @@ async fn abort_hand_rejected_when_nobody_disconnected() {
 
     // host が 何の disconnect も無いまま AbortHand → too_early
     send(&mut clients[0].0, &ClientMessage::AbortHand).await;
-    let m = wait_for(&mut clients[0].1, |m| {
-        matches!(m, ServerMessage::Error { code, .. } if code == "too_early")
-    })
+    let m = wait_for(
+        &mut clients[0].1,
+        |m| matches!(m, ServerMessage::Error { code, .. } if code == "too_early"),
+    )
     .await;
     if let ServerMessage::Error { code, .. } = m {
         assert_eq!(code, "too_early");
@@ -245,9 +247,10 @@ async fn end_match_rejected_when_nobody_disconnected() {
     let _seats = start_match_and_collect(&mut clients).await;
 
     send(&mut clients[0].0, &ClientMessage::EndMatch).await;
-    let m = wait_for(&mut clients[0].1, |m| {
-        matches!(m, ServerMessage::Error { code, .. } if code == "too_early")
-    })
+    let m = wait_for(
+        &mut clients[0].1,
+        |m| matches!(m, ServerMessage::Error { code, .. } if code == "too_early"),
+    )
     .await;
     if let ServerMessage::Error { code, .. } = m {
         assert_eq!(code, "too_early");
