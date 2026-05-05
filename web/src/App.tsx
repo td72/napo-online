@@ -6,6 +6,13 @@ import { useState } from "react";
 import { TrumpCard } from "./components/Card";
 import { GameMobile } from "./components/GameMobile";
 import { GamePC, type GamePcViewModel } from "./components/GamePC";
+import {
+  BidOverlay,
+  EndOverlay,
+  type OverlayPhase,
+  PartnerOverlay,
+  TrickResultOverlay,
+} from "./components/Overlays";
 import { Avatar, PlayerBadge } from "./components/Player";
 import { useStore } from "./lib/store";
 
@@ -150,7 +157,143 @@ function App() {
 
       <ComponentGallery />
       <GamePreview />
+      <OverlayPreview />
     </div>
+  );
+}
+
+/** Phase E で移植した overlay 群を mock データで切替表示。Phase F で実 state に置換。 */
+function OverlayPreview() {
+  const [active, setActive] = useState<OverlayPhase>("bid");
+  const [tricks, setTricks] = useState(15);
+  const [trump, setTrump] = useState<"S" | "H" | "D" | "C" | "NT">("H");
+
+  return (
+    <section style={{ ...panelStyle, padding: 0, overflow: "hidden" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "0.75rem 1rem",
+          background: "var(--bg-secondary)",
+          borderBottom: "1px solid var(--border-color)",
+          alignItems: "center",
+        }}
+      >
+        <h2 style={{ ...h2Style, margin: 0, flex: 1 }}>Overlays preview</h2>
+        {(["bid", "partner", "trick-result", "end", null] as const).map((p) => (
+          <button
+            type="button"
+            key={String(p)}
+            onClick={() => setActive(p)}
+            style={{
+              padding: "0.25rem 0.6rem",
+              border: "1px solid var(--border-color)",
+              borderRadius: "var(--radius-sm)",
+              background: active === p ? "var(--accent-secondary)" : "transparent",
+              color: active === p ? "white" : "var(--text-primary)",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+              fontFamily: "var(--font-sans)",
+            }}
+          >
+            {p ?? "off"}
+          </button>
+        ))}
+      </div>
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          height: 760,
+          background: "var(--bg-primary)",
+        }}
+      >
+        {active === "bid" && (
+          <BidOverlay
+            opponents={[
+              {
+                name: "ナギ",
+                pos: "tl",
+                bid: "12 ハート",
+                passed: false,
+                leading: false,
+                waiting: false,
+              },
+              {
+                name: "リオ",
+                pos: "tr",
+                bid: "パス",
+                passed: true,
+                leading: false,
+                waiting: false,
+              },
+              {
+                name: "ミナト",
+                pos: "bl",
+                bid: "14 ハート",
+                passed: false,
+                leading: true,
+                waiting: false,
+              },
+              { name: "アオイ", pos: "br", bid: "—", passed: false, leading: false, waiting: true },
+            ]}
+            myName="ハル"
+            currentTopBid={{ tricks: 14, trump: "H", by: "ミナト" }}
+            myTurn
+            minTricks={15}
+            selectedTricks={tricks}
+            selectedTrump={trump}
+            onSelectTricks={setTricks}
+            onSelectTrump={setTrump}
+            onPass={() => alert("pass")}
+            onBid={() => alert(`bid ${tricks} ${trump}`)}
+          />
+        )}
+        {active === "partner" && <PartnerOverlay declarerName="ミナト" />}
+        {active === "trick-result" && (
+          <TrickResultOverlay
+            trickIndex={4}
+            winnerName="ナギ"
+            facesGained={2}
+            cards={[
+              { card: "HA", rot: -8 },
+              { card: "HK", rot: 4 },
+              { card: "D7", rot: -4 },
+              { card: "CQ", rot: 8 },
+            ]}
+          />
+        )}
+        {active === "end" && (
+          <EndOverlay
+            napoTeam={[
+              { name: "ミナト", tricks: 6, picture: 4 },
+              { name: "アオイ", tricks: 4, picture: 3, hidden: "partner" },
+            ]}
+            armyTeam={[
+              { name: "ナギ", tricks: 5, picture: 2 },
+              { name: "リオ", tricks: 3, picture: 1 },
+              { name: "ハル", tricks: 2, picture: 0 },
+            ]}
+            napoScore={14}
+            armyScore={6}
+            napoWon
+            bidValue={13}
+            taken={14}
+            standings={[
+              { name: "ミナト", total: 7, delta: 2, role: "napo" },
+              { name: "アオイ", total: 4, delta: 2, role: "partner" },
+              { name: "ナギ", total: -1, delta: -2, role: "army" },
+              { name: "リオ", total: -5, delta: -2, role: "army" },
+              { name: "ハル", total: -5, delta: -2, role: "army" },
+            ]}
+            currentGame={4}
+            totalGames={10}
+            onNext={() => alert("next hand")}
+          />
+        )}
+      </div>
+    </section>
   );
 }
 
