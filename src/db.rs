@@ -299,9 +299,37 @@ impl Db {
         .await?
     }
 
-    /// 終局済みの局を新しい順に最大 `limit` 件返す。
+    pub async fn count_finished_games(&self) -> Result<usize> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<usize> {
+            let conn = conn.lock().expect("db poisoned");
+            let n: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM games WHERE ended_at IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )?;
+            Ok(n as usize)
+        })
+        .await?
+    }
+
+    pub async fn count_users(&self) -> Result<usize> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<usize> {
+            let conn = conn.lock().expect("db poisoned");
+            let n: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
+            Ok(n as usize)
+        })
+        .await?
+    }
+
+    /// 終局済みの局を新しい順に最大 `limit` 件、`offset` 件スキップして返す。
     /// napoleon / adjutant / 各 player の handle は users テーブルとの LEFT JOIN で解決。
-    pub async fn list_recent_games(&self, limit: usize) -> Result<Vec<GameSummary>> {
+    pub async fn list_recent_games(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<GameSummary>> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<Vec<GameSummary>> {
             let conn = conn.lock().expect("db poisoned");
@@ -331,9 +359,9 @@ impl Db {
                      LEFT JOIN users ua ON ua.email = g.adjutant
                      WHERE g.ended_at IS NOT NULL
                      ORDER BY g.ended_at DESC
-                     LIMIT ?1",
+                     LIMIT ?1 OFFSET ?2",
                 )?;
-                stmt.query_map(params![limit as i64], |r| {
+                stmt.query_map(params![limit as i64, offset as i64], |r| {
                     Ok(GameRow {
                         id: r.get(0)?,
                         room_id: r.get(1)?,
@@ -405,15 +433,16 @@ impl Db {
         .await?
     }
 
-    pub async fn list_users(&self) -> Result<Vec<User>> {
+    pub async fn list_users(&self, limit: usize, offset: usize) -> Result<Vec<User>> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<Vec<User>> {
             let conn = conn.lock().expect("db poisoned");
             let mut stmt = conn.prepare(
-                "SELECT email, handle, created_at, last_seen FROM users ORDER BY last_seen DESC",
+                "SELECT email, handle, created_at, last_seen FROM users
+                 ORDER BY last_seen DESC LIMIT ?1 OFFSET ?2",
             )?;
             let rows = stmt
-                .query_map([], |row| {
+                .query_map(params![limit as i64, offset as i64], |row| {
                     Ok(User {
                         email: row.get(0)?,
                         handle: row.get(1)?,
@@ -642,7 +671,7 @@ mod tests {
         .await
         .unwrap();
 
-        let games = db.list_recent_games(10).await.unwrap();
+        let games = db.list_recent_games(10, 0).await.unwrap();
         assert_eq!(games.len(), 1);
         let g = &games[0];
         assert_eq!(g.id, "game-1");
@@ -705,11 +734,22 @@ mod tests {
         .await
         .unwrap();
 
-        let g = db.list_recent_games(2).await.unwrap();
+        let g = db.list_recent_games(2, 0).await.unwrap();
         assert_eq!(g.len(), 2);
         // ended_at DESC: g2 (300), g3 (200)
         assert_eq!(g[0].id, "g2");
         assert_eq!(g[1].id, "g3");
+
+        // pagination: offset 1, limit 2 → g3, g1(古い順だが limit=2 で 2件)
+        let g_off = db.list_recent_games(2, 1).await.unwrap();
+        assert_eq!(g_off.len(), 2);
+        assert_eq!(g_off[0].id, "g3");
+        assert_eq!(g_off[1].id, "g1");
+
+        assert_eq!(db.count_finished_games().await.unwrap(), 3);
+        // offset > 件数 → 空
+        let empty = db.list_recent_games(99, 99).await.unwrap();
+        assert!(empty.is_empty());
     }
 
     #[tokio::test]
@@ -718,11 +758,20 @@ mod tests {
         db.upsert_user("a@x.com", "alice", 100).await.unwrap();
         db.upsert_user("b@x.com", "bob", 200).await.unwrap();
         db.upsert_user("c@x.com", "carol", 150).await.unwrap();
-        let users = db.list_users().await.unwrap();
+        let users = db.list_users(100, 0).await.unwrap();
         assert_eq!(users.len(), 3);
         assert_eq!(users[0].email, "b@x.com");
         assert_eq!(users[1].email, "c@x.com");
         assert_eq!(users[2].email, "a@x.com");
+
+        // pagination
+        let page1 = db.list_users(2, 0).await.unwrap();
+        assert_eq!(page1.len(), 2);
+        let page2 = db.list_users(2, 2).await.unwrap();
+        assert_eq!(page2.len(), 1);
+        assert_eq!(page2[0].email, "a@x.com");
+
+        assert_eq!(db.count_users().await.unwrap(), 3);
     }
 
     #[tokio::test]

@@ -39,14 +39,41 @@ pub struct UserSummary {
     pub created_at: i64,
 }
 
+#[derive(Serialize)]
+pub struct PagedResponse<T> {
+    pub items: Vec<T>,
+    pub total: usize,
+    pub limit: usize,
+    pub offset: usize,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListParams {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
+const DEFAULT_LIMIT: usize = 20;
+const MAX_LIMIT: usize = 100;
+
+fn normalize(p: &ListParams) -> (usize, usize) {
+    let limit = p.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let offset = p.offset.unwrap_or(0);
+    (limit, offset)
+}
+
 /// 過去に一度でも接続したユーザの一覧。CF Access の招待リスト本体ではないことに注意
 /// (招待されたまま未ログインのメアドはここには出ない)。
 pub async fn list_users(
     State(state): State<AppState>,
     Extension(_claims): Extension<Claims>,
-) -> Result<Json<Vec<UserSummary>>, AppError> {
-    let users = state.db.list_users().await?;
-    let summaries = users
+    Query(params): Query<ListParams>,
+) -> Result<Json<PagedResponse<UserSummary>>, AppError> {
+    let (limit, offset) = normalize(&params);
+    let total = state.db.count_users().await?;
+    let users = state.db.list_users(limit, offset).await?;
+    let items: Vec<UserSummary> = users
         .into_iter()
         .map(|u| UserSummary {
             email: u.email,
@@ -55,13 +82,14 @@ pub async fn list_users(
             created_at: u.created_at,
         })
         .collect();
-    Ok(Json(summaries))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ListGamesParams {
-    /// 取得件数。デフォルト 20、最大 100。
-    pub limit: Option<usize>,
+    let has_more = offset + items.len() < total;
+    Ok(Json(PagedResponse {
+        items,
+        total,
+        limit,
+        offset,
+        has_more,
+    }))
 }
 
 #[derive(Serialize)]
@@ -92,15 +120,16 @@ pub struct PlayerScore {
     pub score: Option<i32>,
 }
 
-/// 終局済みの局を新しい順に返す。`?limit=N`(デフォルト 20、最大 100)。
+/// 終局済みの局を新しい順に返す。`?limit=N&offset=M`(デフォルト 20、最大 100)。
 pub async fn list_games(
     State(state): State<AppState>,
     Extension(_claims): Extension<Claims>,
-    Query(params): Query<ListGamesParams>,
-) -> Result<Json<Vec<GameSummaryResponse>>, AppError> {
-    let limit = params.limit.unwrap_or(20).min(100);
-    let games = state.db.list_recent_games(limit).await?;
-    let out = games
+    Query(params): Query<ListParams>,
+) -> Result<Json<PagedResponse<GameSummaryResponse>>, AppError> {
+    let (limit, offset) = normalize(&params);
+    let total = state.db.count_finished_games().await?;
+    let games = state.db.list_recent_games(limit, offset).await?;
+    let items: Vec<GameSummaryResponse> = games
         .into_iter()
         .map(|g| GameSummaryResponse {
             id: g.id,
@@ -130,5 +159,12 @@ pub async fn list_games(
                 .collect(),
         })
         .collect();
-    Ok(Json(out))
+    let has_more = offset + items.len() < total;
+    Ok(Json(PagedResponse {
+        items,
+        total,
+        limit,
+        offset,
+        has_more,
+    }))
 }
