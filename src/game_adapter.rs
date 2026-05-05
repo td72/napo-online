@@ -91,6 +91,40 @@ impl GameSession {
         self.session.base_seed()
     }
 
+    /// 終局済みの hand について DB 書き込みに必要な情報を集約。
+    /// `current_hand` が `Phase::Finished` でなければ `None`。
+    pub fn finished_hand_summary(&self) -> Option<FinishedHandSummary> {
+        let game = self.session.current_hand();
+        let phase = game.phase();
+        let scores = game.scores()?;
+        let (declarer, bid, _adjutant_card, adjutant_player) = match phase {
+            Phase::Finished {
+                declarer,
+                bid,
+                adjutant_card,
+                adjutant_player,
+                ..
+            } => (*declarer, *bid, *adjutant_card, *adjutant_player),
+            _ => return None,
+        };
+        let napoleon_won = scores[declarer] > 0;
+        let seat_scores: Vec<(PlayerId, i32)> = scores
+            .iter()
+            .enumerate()
+            .map(|(seat, s)| (self.seat_to_player[seat].clone(), *s))
+            .collect();
+        Some(FinishedHandSummary {
+            declarer_seat: declarer,
+            declarer_player: self.seat_to_player[declarer].clone(),
+            adjutant_seat: adjutant_player,
+            adjutant_player: adjutant_player.map(|s| self.seat_to_player[s].clone()),
+            bid_value: bid.tricks,
+            bid_suit: trump_to_label(bid.trump),
+            seat_scores,
+            napoleon_won,
+        })
+    }
+
     pub fn observations_for_all(&self) -> HashMap<PlayerId, WireObservation> {
         self.player_to_seat
             .iter()
@@ -292,6 +326,30 @@ impl GameSession {
 
         events
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct FinishedHandSummary {
+    pub declarer_seat: usize,
+    pub declarer_player: PlayerId,
+    pub adjutant_seat: Option<usize>,
+    pub adjutant_player: Option<PlayerId>,
+    pub bid_value: u8,
+    pub bid_suit: String,
+    /// (email, score) in seat order
+    pub seat_scores: Vec<(PlayerId, i32)>,
+    pub napoleon_won: bool,
+}
+
+fn trump_to_label(t: Trump) -> String {
+    match trump_to_wire(t) {
+        WireTrump::S => "S",
+        WireTrump::H => "H",
+        WireTrump::D => "D",
+        WireTrump::C => "C",
+        WireTrump::NT => "NT",
+    }
+    .to_string()
 }
 
 // --- 純粋な変換ヘルパ ---
