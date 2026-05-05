@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod error;
 mod http;
+mod protocol;
 
 use std::sync::Arc;
 use std::time::Duration;
