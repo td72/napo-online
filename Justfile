@@ -29,8 +29,15 @@ ci:
     cargo clippy --all-targets -- -D warnings
     cargo test --all-targets
 
-# クロスコンパイル(macOS なら `brew install FiloSottile/musl-cross/musl-cross` 要)
+# クロスコンパイル
+# macOS で musl-cross を入れるのは大変なので Docker + `cross` を使う方を推奨。
+# 前提: `cargo install cross` + Docker (Docker Desktop / Rancher Desktop / OrbStack 等)
+#       `rustup target add x86_64-unknown-linux-musl`
 build-release:
+    cross build --release --target {{target}}
+
+# musl-cross をローカルに入れている人向けの直 build(参考)
+build-release-native:
     cargo build --release --target {{target}}
 
 # デプロイ: ビルド → scp → systemctl restart
