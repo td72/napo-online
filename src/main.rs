@@ -3,6 +3,7 @@ mod config;
 mod error;
 mod http;
 mod protocol;
+mod ws;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,6 +42,7 @@ async fn main() -> Result<()> {
 
     let protected = Router::new()
         .route("/api/me", get(http::me))
+        .route("/ws", get(ws::ws_handler))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_access,
