@@ -1,0 +1,35 @@
+[tools]
+rust = "stable"
+prek = "latest"
+
+[tasks.dev]
+description = "Run server with DEV_MODE (no CF Access required)"
+run = "NAPO_DEV_MODE=true NAPO_DB=./napo.db cargo run"
+
+[tasks.test]
+description = "Run all tests (lib + integration + examples)"
+run = "cargo test --all-targets --no-fail-fast"
+
+[tasks.fmt]
+description = "Format Rust sources"
+run = "cargo fmt --all"
+
+[tasks."fmt:check"]
+description = "Check formatting (fails on diff)"
+run = "cargo fmt --all -- --check"
+
+[tasks.clippy]
+description = "Run clippy with -D warnings on all targets"
+run = "cargo clippy --all-targets -- -D warnings"
+
+[tasks.doc]
+description = "Build API documentation (no deps)"
+run = "cargo doc --no-deps"
+
+[tasks.ci]
+description = "Run the same checks as GitHub Actions CI"
+depends = ["fmt:check", "clippy", "test"]
+
+[tasks.hooks]
+description = "Install prek hooks (commit + pre-push)"
+run = ["prek install", "prek install --hook-type pre-push"]

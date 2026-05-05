@@ -156,60 +156,76 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
             true
         }
         ClientMessage::StartMatch => {
-            forward_to_room(socket, session, RoomCommand::StartMatch {
-                by: session.claims.email.clone(),
-            })
+            forward_to_room(
+                socket,
+                session,
+                RoomCommand::StartMatch {
+                    by: session.claims.email.clone(),
+                },
+            )
             .await
         }
         ClientMessage::AbortHand => {
-            forward_to_room(socket, session, RoomCommand::AbortHand {
-                by: session.claims.email.clone(),
-            })
+            forward_to_room(
+                socket,
+                session,
+                RoomCommand::AbortHand {
+                    by: session.claims.email.clone(),
+                },
+            )
             .await
         }
         ClientMessage::EndMatch => {
-            forward_to_room(socket, session, RoomCommand::EndMatch {
-                by: session.claims.email.clone(),
-            })
+            forward_to_room(
+                socket,
+                session,
+                RoomCommand::EndMatch {
+                    by: session.claims.email.clone(),
+                },
+            )
             .await
         }
         ClientMessage::NextHand => {
-            forward_to_room(socket, session, RoomCommand::NextHand {
-                player: session.claims.email.clone(),
-            })
+            forward_to_room(
+                socket,
+                session,
+                RoomCommand::NextHand {
+                    player: session.claims.email.clone(),
+                },
+            )
             .await
         }
         ClientMessage::SubmitAction { action } => {
-            forward_to_room(socket, session, RoomCommand::SubmitAction {
-                player: session.claims.email.clone(),
-                action,
-            })
+            forward_to_room(
+                socket,
+                session,
+                RoomCommand::SubmitAction {
+                    player: session.claims.email.clone(),
+                    action,
+                },
+            )
             .await
         }
     }
 }
 
-async fn forward_to_room(
-    socket: &mut WebSocket,
-    session: &Session,
-    cmd: RoomCommand,
-) -> bool {
+async fn forward_to_room(socket: &mut WebSocket, session: &Session, cmd: RoomCommand) -> bool {
     let Some(rh) = session.current_room.as_ref() else {
         let _ = send(socket, &error_msg("no_room", "you are not in a room")).await;
         return true;
     };
     if rh.tx.send(cmd).await.is_err() {
-        let _ = send(socket, &error_msg("room_closed", "room is no longer reachable")).await;
+        let _ = send(
+            socket,
+            &error_msg("room_closed", "room is no longer reachable"),
+        )
+        .await;
     }
     true
 }
 
 async fn handle_create_room(socket: &mut WebSocket, session: &mut Session) {
-    match session
-        .state
-        .hub
-        .create_room(session.claims.email.clone())
-    {
+    match session.state.hub.create_room(session.claims.email.clone()) {
         Ok(room_id) => {
             join_room_inner(socket, session, &room_id).await;
         }
@@ -224,7 +240,7 @@ async fn handle_create_room(socket: &mut WebSocket, session: &mut Session) {
 }
 
 async fn handle_join_room(socket: &mut WebSocket, session: &mut Session, room_id: &str) {
-    join_room_inner(socket, session, &room_id.to_string()).await;
+    join_room_inner(socket, session, room_id).await;
 }
 
 async fn join_room_inner(socket: &mut WebSocket, session: &mut Session, room_id: &str) {

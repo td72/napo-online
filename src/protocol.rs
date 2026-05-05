@@ -343,12 +343,7 @@ mod tests {
     fn wire_action_play_card_roundtrip() {
         let s = r#"{"type":"play_card","payload":{"card":"SA"}}"#;
         let a: WireAction = serde_json::from_str(s).unwrap();
-        assert_eq!(
-            a,
-            WireAction::PlayCard {
-                card: "SA".into()
-            }
-        );
+        assert_eq!(a, WireAction::PlayCard { card: "SA".into() });
     }
 
     #[test]

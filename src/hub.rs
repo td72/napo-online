@@ -10,8 +10,7 @@ use crate::room::{PlayerInfo, Room, RoomCommand, RoomTimers};
 
 const ROOM_ID_LEN: usize = 8;
 /// 0 / O / 1 / l / I を除いた可読英数字
-const ROOM_ID_CHARSET: &[u8] =
-    b"23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz";
+const ROOM_ID_CHARSET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz";
 pub const MAX_PLAYERS_PER_ROOM: usize = 5;
 const ROOM_CMD_BUFFER: usize = 64;
 
@@ -89,11 +88,7 @@ impl Hub {
         info: PlayerInfo,
         reply: mpsc::Sender<ServerMessage>,
     ) -> Result<RoomHandle, JoinError> {
-        let tx = self
-            .rooms
-            .get(room_id)
-            .ok_or(JoinError::NotFound)?
-            .clone();
+        let tx = self.rooms.get(room_id).ok_or(JoinError::NotFound)?.clone();
         tx.send(RoomCommand::Join { info, reply })
             .await
             .map_err(|_| JoinError::Closed)?;

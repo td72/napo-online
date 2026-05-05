@@ -89,15 +89,15 @@ impl Verifier {
     }
 
     pub async fn verify(&self, token: &str) -> Result<Claims, AuthError> {
-        let header = decode_header(token)
-            .map_err(|e| AuthError::InvalidToken(format!("header: {e}")))?;
+        let header =
+            decode_header(token).map_err(|e| AuthError::InvalidToken(format!("header: {e}")))?;
         let kid = header.kid.ok_or(AuthError::MissingKid)?;
 
         let guard = self.jwks.read().await;
         let jwks = guard.as_ref().ok_or(AuthError::JwksNotLoaded)?;
         let jwk = jwks.find(&kid).ok_or(AuthError::UnknownKid)?;
-        let key = DecodingKey::from_jwk(jwk)
-            .map_err(|e| AuthError::InvalidToken(format!("key: {e}")))?;
+        let key =
+            DecodingKey::from_jwk(jwk).map_err(|e| AuthError::InvalidToken(format!("key: {e}")))?;
 
         let mut validation = Validation::new(header.alg);
         validation.set_audience(&[&self.aud]);
