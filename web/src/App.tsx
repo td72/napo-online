@@ -1,6 +1,6 @@
-// Phase B-3 / C / D 検証用 UI。store + WS の動作 + Card / Player ギャラリー +
-// PC/Mobile レイアウトの mock プレビュー(WS 接続なしでも視覚確認できる)。
-// Phase E で WS observation → vm 変換を実装。
+// Phase E-3: WS observation → GamePC / GameMobile + Overlays。
+// observation が無いときは Lobby を出して接続/ルーム/Match 開始を行う。
+// dev preview(gallery / mock game / mock overlays)は <DevPreview/> として末尾に残す。
 
 import { useState } from "react";
 import { TrumpCard } from "./components/Card";
@@ -14,59 +14,97 @@ import {
   TrickResultOverlay,
 } from "./components/Overlays";
 import { Avatar, PlayerBadge } from "./components/Player";
+import {
+  currentHandIndex,
+  declarerName,
+  mySeatName,
+  selectBidVMs,
+  selectGameVm,
+  selectOverlayPhase,
+} from "./lib/select";
 import { useStore } from "./lib/store";
+import type { WireTrump } from "./types";
 
 function App() {
+  const observation = useStore((s) => s.observation);
+
+  return (
+    <div style={pageStyle}>
+      <Header />
+      {observation ? <GameStage /> : <LobbyView />}
+      <DevPreview />
+    </div>
+  );
+}
+
+function Header() {
   const status = useStore((s) => s.status);
   const myEmail = useStore((s) => s.myEmail);
   const myHandle = useStore((s) => s.myHandle);
   const serverVersion = useStore((s) => s.serverVersion);
+  const disconnect = useStore((s) => s.disconnect);
+
+  return (
+    <header
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+        padding: "10px 16px",
+        background: "var(--bg-secondary)",
+        borderBottom: "1px solid var(--border-color)",
+      }}
+    >
+      <span
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 18,
+          fontWeight: 600,
+        }}
+      >
+        napo-online
+      </span>
+      <span style={badgeStyle(status)}>{status}</span>
+      {myEmail && <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>{myEmail}</span>}
+      {myHandle && (
+        <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>handle: {myHandle}</span>
+      )}
+      {serverVersion && (
+        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>server v{serverVersion}</span>
+      )}
+      <span style={{ flex: 1 }} />
+      {status !== "disconnected" && (
+        <button type="button" onClick={disconnect} style={btnStyle}>
+          切断
+        </button>
+      )}
+    </header>
+  );
+}
+
+function LobbyView() {
+  const status = useStore((s) => s.status);
+  const myEmail = useStore((s) => s.myEmail);
   const room = useStore((s) => s.room);
-  const events = useStore((s) => s.events);
+  const finalScores = useStore((s) => s.finalScores);
+  const seats = useStore((s) => s.seats);
   const errors = useStore((s) => s.errors);
   const connect = useStore((s) => s.connect);
   const send = useStore((s) => s.send);
-  const disconnect = useStore((s) => s.disconnect);
 
   const [displayName, setDisplayName] = useState("alice");
   const [devEmail, setDevEmail] = useState("alice@local");
   const [roomIdInput, setRoomIdInput] = useState("");
 
-  return (
-    <div
-      style={{
-        padding: "2rem",
-        maxWidth: 720,
-        margin: "0 auto",
-        fontFamily: "var(--font-sans)",
-      }}
-    >
-      <h1
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: "2rem",
-          margin: 0,
-          marginBottom: "0.5rem",
-        }}
-      >
-        napo-online
-      </h1>
-      <p style={{ color: "var(--text-secondary)", margin: "0 0 1.5rem" }}>
-        Phase B-3: WebSocket + Zustand 検証。Phase D で本物のゲーム画面に差し替え。
-      </p>
+  const isHost = room && myEmail && room.host === myEmail;
+  const phaseType = room?.state.type ?? null;
 
-      <section style={panelStyle}>
-        <h2 style={h2Style}>接続</h2>
-        <div style={rowStyle}>
-          <span style={badgeStyle(status)}>{status}</span>
-          {myEmail && <span style={{ color: "var(--text-secondary)" }}>{myEmail}</span>}
-          {myHandle && <span>handle: {myHandle}</span>}
-          {serverVersion && (
-            <span style={{ color: "var(--text-muted)" }}>server v{serverVersion}</span>
-          )}
-        </div>
-        {status === "disconnected" && (
-          <div style={{ ...rowStyle, marginTop: "0.75rem" }}>
+  return (
+    <div style={{ padding: "16px", maxWidth: 760, margin: "0 auto" }}>
+      {status === "disconnected" && (
+        <section style={panelStyle}>
+          <h2 style={h2Style}>接続</h2>
+          <div style={rowStyle}>
             <input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -79,18 +117,19 @@ function App() {
               placeholder="dev_email"
               style={inputStyle}
             />
-            <button onClick={() => connect(displayName, devEmail)} style={btnStyle}>
+            <button type="button" onClick={() => connect(displayName, devEmail)} style={btnStyle}>
               接続
             </button>
           </div>
-        )}
-        {status === "connected" && (
-          <div style={{ ...rowStyle, marginTop: "0.75rem" }}>
-            <button onClick={disconnect} style={btnStyle}>
-              切断
-            </button>
-            <button onClick={() => send({ type: "create_room" })} style={btnStyle}>
-              CreateRoom
+        </section>
+      )}
+
+      {status === "connected" && !room && (
+        <section style={panelStyle}>
+          <h2 style={h2Style}>ルーム</h2>
+          <div style={rowStyle}>
+            <button type="button" onClick={() => send({ type: "create_room" })} style={btnStyle}>
+              新規作成
             </button>
             <input
               value={roomIdInput}
@@ -99,53 +138,75 @@ function App() {
               style={inputStyle}
             />
             <button
+              type="button"
               onClick={() => send({ type: "join_room", payload: { room_id: roomIdInput } })}
               style={btnStyle}
             >
-              JoinRoom
+              参加
             </button>
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {room && (
         <section style={panelStyle}>
-          <h2 style={h2Style}>部屋: {room.room_id}</h2>
-          <p style={{ color: "var(--text-secondary)", margin: 0 }}>
-            host: {room.host} / state: {room.state.type}
+          <h2 style={h2Style}>
+            部屋 {room.room_id}{" "}
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>· {phaseType}</span>
+          </h2>
+          <p style={{ color: "var(--text-secondary)", margin: 0, fontSize: 12 }}>
+            host: {room.host} ({isHost ? "あなた" : "他"})
           </p>
-          <ul style={{ paddingLeft: "1.2rem", marginTop: "0.5rem" }}>
+          <ul style={{ paddingLeft: "1.2rem", marginTop: 8 }}>
             {room.players.map((p) => (
-              <li key={p.player_id} style={{ color: p.online ? undefined : "var(--text-muted)" }}>
-                {p.display_name} ({p.player_id}) {p.seat !== null && `seat=${p.seat}`}{" "}
-                {!p.online && "— offline"}
+              <li
+                key={p.player_id}
+                style={{ color: p.online ? undefined : "var(--text-muted)", fontSize: 13 }}
+              >
+                {p.display_name} {p.seat !== null && `· seat${p.seat}`} {!p.online && "— offline"}
+              </li>
+            ))}
+          </ul>
+          <div style={{ ...rowStyle, marginTop: 10 }}>
+            {phaseType === "lobby" && isHost && (
+              <button type="button" onClick={() => send({ type: "start_match" })} style={btnStyle}>
+                Start Match
+              </button>
+            )}
+            {phaseType === "between_hands" && (
+              <button type="button" onClick={() => send({ type: "next_hand" })} style={btnStyle}>
+                Next Hand
+              </button>
+            )}
+            {(phaseType === "playing" || phaseType === "between_hands") && isHost && (
+              <button type="button" onClick={() => send({ type: "end_match" })} style={btnStyle}>
+                End Match
+              </button>
+            )}
+            <button type="button" onClick={() => send({ type: "leave_room" })} style={btnStyle}>
+              退出
+            </button>
+          </div>
+        </section>
+      )}
+
+      {finalScores && seats && (
+        <section style={panelStyle}>
+          <h2 style={h2Style}>最終スコア</h2>
+          <ul style={{ paddingLeft: "1.2rem", margin: 0, fontSize: 13 }}>
+            {seats.map((s) => (
+              <li key={s.seat}>
+                seat{s.seat} {s.display_name}: {finalScores[s.seat] ?? 0}
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <section style={panelStyle}>
-        <h2 style={h2Style}>イベントログ ({events.length})</h2>
-        <pre
-          style={{
-            fontSize: "0.8rem",
-            background: "var(--bg-secondary)",
-            padding: "0.5rem",
-            borderRadius: "var(--radius-sm)",
-            maxHeight: "12rem",
-            overflowY: "auto",
-            margin: 0,
-          }}
-        >
-          {events.map((e, i) => `${i}: ${JSON.stringify(e)}`).join("\n")}
-        </pre>
-      </section>
-
       {errors.length > 0 && (
         <section style={panelStyle}>
           <h2 style={{ ...h2Style, color: "var(--accent-primary)" }}>エラー</h2>
-          <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
+          <ul style={{ paddingLeft: "1.2rem", margin: 0, fontSize: 13 }}>
             {errors.slice(-5).map((e, i) => (
               <li key={i} style={{ color: "var(--accent-primary)" }}>
                 [{e.code}] {e.message}
@@ -154,19 +215,356 @@ function App() {
           </ul>
         </section>
       )}
-
-      <ComponentGallery />
-      <GamePreview />
-      <OverlayPreview />
     </div>
   );
 }
 
-/** Phase E で移植した overlay 群を mock データで切替表示。Phase F で実 state に置換。 */
+function GameStage() {
+  const observation = useStore((s) => s.observation);
+  const room = useStore((s) => s.room);
+  const seats = useStore((s) => s.seats);
+  const mySeat = useStore((s) => s.mySeat);
+  const myEmail = useStore((s) => s.myEmail);
+  const hands_per_match = useStore((s) => s.hands_per_match);
+  const events = useStore((s) => s.events);
+  const submitAction = useStore((s) => s.submitAction);
+
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [selectedTricks, setSelectedTricks] = useState(13);
+  const [selectedTrump, setSelectedTrump] = useState<WireTrump>("S");
+  const [layout, setLayout] = useState<"pc" | "mobile">("pc");
+
+  const handIndex = currentHandIndex(events);
+  const vm = selectGameVm({
+    observation,
+    room,
+    seats,
+    mySeat,
+    myEmail,
+    hands_per_match,
+    handIndex,
+  });
+  const overlay = selectOverlayPhase(observation);
+  const myName = mySeatName({ seats, mySeat, myEmail });
+
+  if (!vm || !observation || mySeat === null) {
+    return <div style={{ padding: 16, color: "var(--text-secondary)" }}>observation 待機中…</div>;
+  }
+
+  const onPlay = () => {
+    if (selectedIdx === null) return;
+    const card = vm.myHand[selectedIdx];
+    if (!card) return;
+    submitAction({ type: "play_card", payload: { card } });
+    setSelectedIdx(null);
+  };
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8, justifyContent: "center" }}>
+        {(["pc", "mobile"] as const).map((v) => (
+          <button
+            type="button"
+            key={v}
+            onClick={() => setLayout(v)}
+            style={{
+              ...btnStyle,
+              background: layout === v ? "var(--accent-secondary)" : "transparent",
+              color: layout === v ? "#fff" : "var(--text-primary)",
+              border: "1px solid var(--border-color)",
+            }}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          background: "#efeae0",
+          padding: 12,
+          borderRadius: "var(--radius-md)",
+        }}
+      >
+        <div
+          style={{
+            position: "relative",
+            width: layout === "mobile" ? 402 : 1280,
+            height: layout === "mobile" ? 720 : 800,
+            maxWidth: "100%",
+            border: "1px solid var(--border-color)",
+            borderRadius: "var(--radius-md)",
+            overflow: "hidden",
+            background: "var(--bg-primary)",
+          }}
+        >
+          {layout === "mobile" ? (
+            <GameMobile
+              vm={vm}
+              selectedIdx={selectedIdx}
+              onSelectCard={setSelectedIdx}
+              onPlay={onPlay}
+              myName={myName}
+            />
+          ) : (
+            <GamePC
+              vm={vm}
+              selectedIdx={selectedIdx}
+              onSelectCard={setSelectedIdx}
+              onPlay={onPlay}
+            />
+          )}
+          {overlay === "bid" && (
+            <BidStageOverlay
+              myName={myName}
+              selectedTricks={selectedTricks}
+              selectedTrump={selectedTrump}
+              setSelectedTricks={setSelectedTricks}
+              setSelectedTrump={setSelectedTrump}
+              mobile={layout === "mobile"}
+            />
+          )}
+          {overlay === "partner" && (
+            <PartnerStageOverlay mySeat={mySeat} mobile={layout === "mobile"} />
+          )}
+        </div>
+      </div>
+      <DevControls />
+    </div>
+  );
+}
+
+function BidStageOverlay({
+  myName,
+  selectedTricks,
+  selectedTrump,
+  setSelectedTricks,
+  setSelectedTrump,
+  mobile,
+}: {
+  myName: string;
+  selectedTricks: number;
+  selectedTrump: WireTrump;
+  setSelectedTricks: (n: number) => void;
+  setSelectedTrump: (s: WireTrump) => void;
+  mobile?: boolean;
+}) {
+  const observation = useStore((s) => s.observation);
+  const seats = useStore((s) => s.seats);
+  const mySeat = useStore((s) => s.mySeat);
+  const submitAction = useStore((s) => s.submitAction);
+
+  const bidSel = selectBidVMs({ observation, seats, mySeat });
+  if (!bidSel || !observation || mySeat === null) return null;
+
+  const myTurn = observation.to_act === mySeat;
+  const tricks = Math.max(selectedTricks, bidSel.minTricks);
+
+  return (
+    <BidOverlay
+      mobile={mobile}
+      opponents={bidSel.opponents}
+      myName={myName}
+      currentTopBid={bidSel.currentTopBid}
+      myTurn={myTurn}
+      minTricks={bidSel.minTricks}
+      selectedTricks={tricks}
+      selectedTrump={selectedTrump}
+      onSelectTricks={setSelectedTricks}
+      onSelectTrump={setSelectedTrump}
+      onPass={() => submitAction({ type: "pass" })}
+      onBid={() =>
+        submitAction({
+          type: "bid",
+          payload: { tricks, trump: selectedTrump },
+        })
+      }
+    />
+  );
+}
+
+function PartnerStageOverlay({ mySeat, mobile }: { mySeat: number; mobile?: boolean }) {
+  const observation = useStore((s) => s.observation);
+  const seats = useStore((s) => s.seats);
+  const submitAction = useStore((s) => s.submitAction);
+
+  const name = declarerName({ observation, seats }) ?? "—";
+  if (!observation) return null;
+
+  // 自分が declarer の場合: PartnerOverlay の上に簡易 picker を被せる(設計後で差し替え)。
+  const amDeclarer = observation.declarer === mySeat;
+
+  return (
+    <>
+      <PartnerOverlay mobile={mobile} declarerName={name} />
+      {amDeclarer && (
+        <DeclarerAdjutantPicker
+          onPick={(card) => submitAction({ type: "declare_adjutant", payload: { card } })}
+        />
+      )}
+    </>
+  );
+}
+
+function DeclarerAdjutantPicker({ onPick }: { onPick: (card: string) => void }) {
+  const [card, setCard] = useState("HA");
+  const suits: WireTrump[] = ["S", "H", "D", "C"];
+  const ranks = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"];
+  return (
+    <div
+      style={{
+        position: "absolute",
+        zIndex: 60,
+        left: "50%",
+        bottom: 40,
+        transform: "translateX(-50%)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        padding: 12,
+        background: "var(--bg-primary)",
+        border: "1px solid var(--border-color)",
+        borderRadius: "var(--radius-md)",
+        boxShadow: "var(--shadow-lg)",
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 600 }}>副官カードを選択</div>
+      <div style={{ display: "flex", gap: 4 }}>
+        {suits.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setCard(s + card.slice(1))}
+            style={{
+              ...btnStyle,
+              background: card[0] === s ? "var(--accent-secondary)" : "transparent",
+              color: card[0] === s ? "#fff" : "var(--text-primary)",
+              border: "1px solid var(--border-color)",
+              padding: "2px 8px",
+            }}
+          >
+            {s === "S" ? "♠" : s === "H" ? "♥" : s === "D" ? "♦" : "♣"}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+        {ranks.map((r) => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => setCard(card[0] + r)}
+            style={{
+              ...btnStyle,
+              background: card.slice(1) === r ? "var(--accent-secondary)" : "transparent",
+              color: card.slice(1) === r ? "#fff" : "var(--text-primary)",
+              border: "1px solid var(--border-color)",
+              padding: "2px 6px",
+              fontSize: 11,
+            }}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      <button type="button" onClick={() => onPick(card)} style={btnStyle}>
+        宣言: {card}
+      </button>
+    </div>
+  );
+}
+
+function DevControls() {
+  const send = useStore((s) => s.send);
+  const lastScores = useStore((s) => s.lastScores);
+  const room = useStore((s) => s.room);
+  const events = useStore((s) => s.events);
+  const errors = useStore((s) => s.errors);
+
+  return (
+    <details style={{ marginTop: 12 }}>
+      <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-secondary)" }}>
+        Dev controls / event log
+      </summary>
+      <div style={{ ...rowStyle, marginTop: 8 }}>
+        <button type="button" onClick={() => send({ type: "abort_hand" })} style={btnStyle}>
+          AbortHand
+        </button>
+        <button type="button" onClick={() => send({ type: "next_hand" })} style={btnStyle}>
+          NextHand
+        </button>
+        <button type="button" onClick={() => send({ type: "end_match" })} style={btnStyle}>
+          EndMatch
+        </button>
+        {room && (
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            room.state: {room.state.type}
+          </span>
+        )}
+      </div>
+      {lastScores && (
+        <div style={{ marginTop: 8, fontSize: 12 }}>
+          Last hand scores: [{lastScores.scores.join(", ")}] / cumul: [
+          {lastScores.cumulative.join(", ")}]
+        </div>
+      )}
+      <pre
+        style={{
+          marginTop: 8,
+          fontSize: 11,
+          background: "var(--bg-secondary)",
+          padding: 8,
+          borderRadius: "var(--radius-sm)",
+          maxHeight: 180,
+          overflowY: "auto",
+        }}
+      >
+        {events
+          .slice(-30)
+          .map((e, i) => `${i}: ${JSON.stringify(e)}`)
+          .join("\n")}
+      </pre>
+      {errors.length > 0 && (
+        <ul style={{ paddingLeft: "1.2rem", margin: "8px 0 0", fontSize: 12 }}>
+          {errors.slice(-5).map((e, i) => (
+            <li key={i} style={{ color: "var(--accent-primary)" }}>
+              [{e.code}] {e.message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
+  );
+}
+
+// ====================== Dev preview (mock 表示) ======================
+
+function DevPreview() {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      style={{ margin: "16px", padding: 8, background: "var(--bg-secondary)" }}
+    >
+      <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
+        Dev preview (gallery / mock game / mock overlays)
+      </summary>
+      {open && (
+        <>
+          <ComponentGallery />
+          <GamePreview />
+          <OverlayPreview />
+        </>
+      )}
+    </details>
+  );
+}
+
 function OverlayPreview() {
   const [active, setActive] = useState<OverlayPhase>("bid");
   const [tricks, setTricks] = useState(15);
-  const [trump, setTrump] = useState<"S" | "H" | "D" | "C" | "NT">("H");
+  const [trump, setTrump] = useState<WireTrump>("H");
 
   return (
     <section style={{ ...panelStyle, padding: 0, overflow: "hidden" }}>
@@ -297,8 +695,6 @@ function OverlayPreview() {
   );
 }
 
-/** Phase D で移植した GamePC / GameMobile を mock vm で表示。
- * Phase E で実 WS state からの vm 派生に置き換える。 */
 function GamePreview() {
   const [variant, setVariant] = useState<"pc" | "mobile" | "turn-pc" | "wait-pc">("turn-pc");
   const [selectedIdx, setSelectedIdx] = useState<number | null>(4);
@@ -367,7 +763,6 @@ function GamePreview() {
 
   const waitVm: GamePcViewModel = { ...baseVm, phase: "wait" };
   const vm = variant === "wait-pc" ? waitVm : baseVm;
-
   const isMobile = variant === "mobile";
 
   return (
@@ -447,8 +842,6 @@ function GamePreview() {
   );
 }
 
-/** Phase C で移植した Card / Player を視覚チェックするためのギャラリー。
- * Phase D 開始時に削除予定。 */
 function ComponentGallery() {
   return (
     <>
@@ -510,6 +903,13 @@ function ComponentGallery() {
     </>
   );
 }
+
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  fontFamily: "var(--font-sans)",
+  color: "var(--text-primary)",
+  background: "var(--bg-primary)",
+};
 
 const panelStyle: React.CSSProperties = {
   background: "var(--bg-secondary)",
