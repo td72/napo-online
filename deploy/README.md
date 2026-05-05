@@ -46,6 +46,45 @@ sudo journalctl -u napo -f
 curl -s https://napo.<your-domain>/healthz   # 200 ならOK(CF Access が前段なので 401/403 になる場合あり)
 ```
 
+## クロスコンパイル(ローカル → VPS)
+
+### 前提(macOS の場合)
+
+```bash
+# 1. Docker(Docker Desktop / Rancher Desktop / OrbStack のいずれか)
+brew install --cask docker        # 例
+
+# 2. cross(Docker ベースの cargo cross-compile ラッパ)
+cargo install cross
+
+# 3. Rust target
+rustup target add x86_64-unknown-linux-musl
+```
+
+`brew install FiloSottile/musl-cross/musl-cross` で musl-cross 直入れも可能だが、
+GCC を source からビルドするので 30分〜1時間かかる。Docker が動くなら cross が圧倒的に速い。
+
+### ビルド
+
+```bash
+just build-release
+# → target/x86_64-unknown-linux-musl/release/napo-online (約 13MB, static-pie ELF)
+```
+
+実機検証済み: `cross build --release --target x86_64-unknown-linux-musl` で 4分前後。
+出力は完全に static link なので glibc 依存無く Ubuntu 24.04 でそのまま動く。
+
+### デプロイ
+
+```bash
+HOST=ubuntu@napo.example.com PORT=22 just deploy
+```
+
+`deploy` レシピは `build-release` → `scp /tmp/napo-online` → ssh で
+`/opt/napo/napo-online.new` にインストール → `.prev` に旧バイナリを退避 → systemd restart。
+
+問題があれば `just rollback` で `.prev` に戻せる。
+
 ## バックアップ
 
 `/var/lib/napo/game.db` を定期的に `sqlite3 .backup` で保存:
