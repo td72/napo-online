@@ -141,9 +141,11 @@ static_assertions = "1"
 > **注**: 乱数は `napo-core` 内部で `seed: u64` を保持して `StdRng` を生成する方式。
 > 「サーバ側から RNG を注入」する旧設計案ではない。決定論性は同じ `(Rules, seed, Action 列)` で再現される。
 
-### 2.3 napo-online の Cargo.toml(雛形)
+### 2.3 napo-online の Cargo.toml
 
 `napo-core` の依存(`rand 0.10` / `thiserror 2` / edition 2024)に揃える。
+**新規追加時は必ず `cargo add <crate> [--features ...]` で最新 stable を取る**。
+以下は 2026-05 時点で `cargo add` を回した結果なので、新しい開発では crate ごとに `cargo search` か `cargo add` で更新してから写すこと。
 
 ```toml
 [package]
@@ -152,19 +154,27 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# ゲームロジック(serde feature で JSON 永続化を可能に)
+napo-core = { path = "../napo-core", features = ["serde"] }
+# napo-core が tag を切ったら以下に置き換える(開発時は path、リリース時は git tag、A10):
+# napo-core = { git = "ssh://git@github.com/td72/napo-core.git", tag = "vX.Y.Z", features = ["serde"] }
+# [patch."ssh://git@github.com/td72/napo-core.git"]
+# napo-core = { path = "../napo-core" }
+
 # Web / async
-axum = { version = "0.7", features = ["ws", "macros"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.5", features = ["trace", "compression-zstd", "fs"] }
+tower-http = { version = "0.6", features = ["trace", "compression-zstd", "fs"] }
 
 # シリアライゼーション
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # 認証(Cloudflare Access JWT 検証)
-jsonwebtoken = "9"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+jsonwebtoken = "10"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+# 注: reqwest 0.13 で feature 名が `rustls-tls` → `rustls` にリネームされた
 
 # ロギング・エラー
 tracing = "0.1"
@@ -173,24 +183,27 @@ anyhow = "1"
 thiserror = "2"
 
 # DB
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 
 # 設定・ユーティリティ
 dotenvy = "0.15"
 uuid = { version = "1", features = ["v4", "serde"] }
 rand = "0.10"
 dashmap = "6"
+# 注: dashmap 7 系は 2026-05 時点で RC 段階。安定版が出るまで 6 を維持
 
-# ★ ゲームロジック(別リポジトリ・Git依存。serde feature を有効にして JSON 永続化を可能に)
-napo-core = { git = "ssh://git@github.com/td72/napo-core.git", tag = "v0.1.0", features = ["serde"] }
-
-# 開発中はローカルパスに差し替える(§3.3)
-[patch."ssh://git@github.com/td72/napo-core.git"]
-napo-core = { path = "../napo-core" }
+[dev-dependencies]
+# 統合テスト/サンプル WS クライアント用
+tokio-tungstenite = "0.29"
+futures-util = "0.3"
 ```
 
-> **依存方針(A10 で確定)**: 開発中は `[patch]` でローカル `../napo-core` を参照、
-> リリース時は git **tag 固定**(branch 追従はしない)。`Cargo.lock` をコミットして版を固定する。
+> **依存方針(A10 で確定)**: 開発中は `napo-core` を `path = "../napo-core"` で参照、
+> napo-core が tag を切ったら git **tag 固定** + `[patch]` でローカル差し替えに切り替える。
+> `Cargo.lock` をコミットして版を固定する。
+>
+> **更新運用**: メジャー版が上がったら `cargo update -p <crate>` ではなく
+> `cargo add <crate>@<新版>` で明示的にバンプし、API 互換のテストを通す。
 
 ### 2.4 各モジュールの責務(napo-online)
 
