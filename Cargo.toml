@@ -4,38 +4,25 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# Web / async
-axum = { version = "0.7", features = ["ws", "macros"] }
-tokio = { version = "1", features = ["full"] }
-tower = "0.5"
-tower-http = { version = "0.5", features = ["trace", "compression-zstd", "fs"] }
-
-# シリアライゼーション
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-# 認証(Cloudflare Access JWT 検証)
-jsonwebtoken = "9"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-
-# ロギング・エラー
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-anyhow = "1"
-thiserror = "2"
-
-# DB
-rusqlite = { version = "0.31", features = ["bundled"] }
-
-# 設定・ユーティリティ
-dotenvy = "0.15"
-uuid = { version = "1", features = ["v4", "serde"] }
-rand = "0.10"
+anyhow = "1.0.102"
+axum = { version = "0.8.9", features = ["ws", "macros"] }
 dashmap = "6"
-
-# ゲームロジック。napo-core が tag を切ったら docs §2.3 の git+[patch] 形式に切り替える。
+dotenvy = "0.15.7"
+jsonwebtoken = "10.3.0"
 napo-core = { path = "../napo-core", features = ["serde"] }
+rand = "0.10.1"
+reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls"] }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+tokio = { version = "1.52.2", features = ["full"] }
+tower = "0.5.3"
+tower-http = { version = "0.6.8", features = ["trace", "compression-zstd", "fs"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+uuid = { version = "1.23.1", features = ["v4", "serde"] }
 
 [dev-dependencies]
-tokio-tungstenite = "0.24"
-futures-util = "0.3"
+futures-util = "0.3.32"
+tokio-tungstenite = "0.29.0"
