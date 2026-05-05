@@ -1,14 +1,20 @@
 #![allow(dead_code)] // wire 型はコンシューマ(ws.rs / room.rs)が揃うまで未参照
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 pub const PROTOCOL_VERSION: u8 = 1;
 
 pub type PlayerId = String;
 pub type RoomId = String;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `cargo test` 時に web/src/types/ へ TS 定義を出力する共通設定。
+/// 各 wire 型に `#[ts(export)]` で適用。
+const TS_DIR: &str = "web/src/types/";
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[ts(export)]
 pub enum ClientMessage {
     // ロビー
     Hello { display_name: String },
@@ -28,8 +34,9 @@ pub enum ClientMessage {
     Ping,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[ts(export)]
 pub enum WireAction {
     Bid { tricks: u8, trump: WireTrump },
     Pass,
@@ -38,8 +45,9 @@ pub enum WireAction {
     PlayCard { card: String },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, TS)]
 #[serde(rename_all = "UPPERCASE")]
+#[ts(export)]
 pub enum WireTrump {
     S,
     H,
@@ -48,14 +56,16 @@ pub enum WireTrump {
     NT,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct WireBid {
     pub tricks: u8,
     pub trump: WireTrump,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[ts(export)]
 pub enum ServerMessage {
     // 接続/ロビー
     Welcome {
@@ -108,8 +118,9 @@ pub enum ServerMessage {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[ts(export)]
 pub enum PublicEvent {
     HandStarted {
         hand_index: u32,
@@ -149,40 +160,46 @@ pub enum PublicEvent {
     HandAborted,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct SeatAssignment {
     pub seat: usize,
     pub player_id: PlayerId,
     pub display_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct WirePlayedCard {
     pub seat: usize,
     pub card: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct WireCompletedTrick {
     pub plays: Vec<WirePlayedCard>,
     pub winner: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct WireBidEntry {
     pub seat: usize,
     /// None = Pass
     pub bid: Option<WireBid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct WireCurrentBid {
     pub seat: usize,
     pub bid: WireBid,
 }
 
 /// プレイヤー視点のゲーム状態。`napo_core::Observation` を wire 形式に変換したもの。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 pub struct WireObservation {
     pub player: usize,
     pub num_players: usize,
@@ -200,7 +217,8 @@ pub struct WireObservation {
     pub revealed_face_discards: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct RoomView {
     pub room_id: RoomId,
     pub host: PlayerId,
@@ -208,7 +226,8 @@ pub struct RoomView {
     pub state: RoomPhase,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct PlayerView {
     pub player_id: PlayerId,
     pub display_name: String,
@@ -216,8 +235,9 @@ pub struct PlayerView {
     pub online: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[ts(export)]
 pub enum RoomPhase {
     Lobby,
     Playing,

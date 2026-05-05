@@ -1,0 +1,5 @@
+# protocol.rs の #[derive(TS)] が生成する .ts を web/src/types/ に出力する。
+# ts-rs は TS_RS_EXPORT_DIR (default "./bindings") と #[ts(export_to = ...)] を join するので、
+# ここで base を web/src/types に固定し、attr 側は単に #[ts(export)] と書ける。
+[env]
+TS_RS_EXPORT_DIR = "web/src/types"
