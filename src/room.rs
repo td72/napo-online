@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use rand::RngExt;
 use rand::seq::SliceRandom;
 use tokio::sync::mpsc;
+use tokio::time::interval;
 
 use crate::db::{Db, GameOutcome, GameRecord};
 use crate::game_adapter::{ApplyOutcome, FinishedHandSummary, GameSession};
@@ -15,6 +17,14 @@ use crate::protocol::{
 pub struct PlayerInfo {
     pub player_id: PlayerId,
     pub display_name: String,
+}
+
+/// Room actor のタイマー設定。env から組み立てて Hub 経由で各 Room に渡す。
+#[derive(Debug, Clone, Copy)]
+pub struct RoomTimers {
+    pub t2_notify: Duration,
+    pub t3_abort: Duration,
+    pub t4_end: Duration,
 }
 
 pub enum RoomCommand {
@@ -46,9 +56,20 @@ pub enum RoomCommand {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConnState {
+    Online,
+    Suspended,
+}
+
 struct RoomMember {
     info: PlayerInfo,
     sender: mpsc::Sender<ServerMessage>,
+    conn: ConnState,
+    /// Suspended になった時刻。T2/T3/T4 判定の起点。
+    suspended_since: Option<Instant>,
+    /// PlayerDisconnected を既にブロードキャスト済みか(T2 一度だけ通知用)
+    notified_disconnect: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,7 +91,7 @@ pub struct Room {
     next_ready: HashSet<usize>,
     hands_per_match: u32,
     db: Db,
-    /// 進行中の局の開始時刻(unix sec)。StartMatch / NextHand で更新。
+    timers: RoomTimers,
     current_hand_started_at: Option<i64>,
 }
 
@@ -82,6 +103,7 @@ impl Room {
         max_players: usize,
         hands_per_match: u32,
         db: Db,
+        timers: RoomTimers,
     ) -> Self {
         Self {
             id,
@@ -94,28 +116,62 @@ impl Room {
             next_ready: HashSet::new(),
             hands_per_match,
             db,
+            timers,
             current_hand_started_at: None,
         }
     }
 
     pub async fn run(mut self) {
         tracing::info!(room = %self.id, host = %self.host, "room actor started");
-        while let Some(cmd) = self.rx.recv().await {
-            self.handle(cmd).await;
-            // 全員退室で停止
-            if self.members.is_empty() && matches!(self.phase, LocalPhase::Lobby | LocalPhase::Ended) {
+        let mut tick = interval(Duration::from_secs(1));
+        // 初回 tick は即時に発火する仕様 — 一度吸ってから loop に入る
+        tick.tick().await;
+        loop {
+            tokio::select! {
+                cmd = self.rx.recv() => {
+                    match cmd {
+                        Some(c) => self.handle(c).await,
+                        None => break,
+                    }
+                }
+                _ = tick.tick() => {
+                    self.on_tick().await;
+                }
+            }
+            if self.should_terminate() {
                 break;
             }
         }
         tracing::info!(room = %self.id, "room actor exiting");
     }
 
+    fn should_terminate(&self) -> bool {
+        if self.members.is_empty() {
+            return true;
+        }
+        let all_suspended = self.members.values().all(|m| m.conn == ConnState::Suspended);
+        if !all_suspended {
+            return false;
+        }
+        // 全員 Suspended かつ Ended → 即終了
+        if matches!(self.phase, LocalPhase::Ended) {
+            return true;
+        }
+        // 全員 Suspended で最も古い切断から T4 経過 → 自動終了
+        let now = Instant::now();
+        self.members
+            .values()
+            .filter_map(|m| m.suspended_since)
+            .min()
+            .map(|since| now.duration_since(since) >= self.timers.t4_end)
+            .unwrap_or(false)
+    }
+
     async fn handle(&mut self, cmd: RoomCommand) {
         match cmd {
             RoomCommand::Join { info, reply } => self.on_join(info, reply).await,
-            RoomCommand::Leave { player } | RoomCommand::Disconnect { player } => {
-                self.on_leave(player).await
-            }
+            RoomCommand::Leave { player } => self.on_leave(player).await,
+            RoomCommand::Disconnect { player } => self.on_disconnect(player).await,
             RoomCommand::StartMatch { by } => self.on_start_match(by).await,
             RoomCommand::SubmitAction { player, action } => {
                 self.on_submit_action(player, action).await
@@ -127,6 +183,38 @@ impl Room {
     }
 
     async fn on_join(&mut self, info: PlayerInfo, reply: mpsc::Sender<ServerMessage>) {
+        // 既存 seated player の再接続
+        if let Some(existing) = self.members.get_mut(&info.player_id) {
+            existing.sender = reply.clone();
+            existing.conn = ConnState::Online;
+            existing.suspended_since = None;
+            let was_notified = existing.notified_disconnect;
+            existing.notified_disconnect = false;
+            existing.info.display_name = info.display_name.clone();
+
+            tracing::info!(room = %self.id, player = %info.player_id, "player reconnected");
+
+            // 再接続側に最新の状態を送る
+            if let Some(session) = self.session.as_ref()
+                && let Some(seat) = session.seat_of(&info.player_id)
+            {
+                let obs = session
+                    .observations_for_all()
+                    .remove(&info.player_id)
+                    .unwrap();
+                let _ = reply
+                    .send(ServerMessage::Observation { observation: obs })
+                    .await;
+                if was_notified {
+                    self.broadcast(ServerMessage::PlayerReconnected { seat })
+                        .await;
+                }
+            }
+            self.broadcast_room_state().await;
+            return;
+        }
+
+        // 新規 join は Lobby のみ
         if self.phase != LocalPhase::Lobby {
             let _ = reply
                 .send(error("match_in_progress", "this room is mid-match"))
@@ -145,6 +233,9 @@ impl Room {
             RoomMember {
                 info,
                 sender: reply,
+                conn: ConnState::Online,
+                suspended_since: None,
+                notified_disconnect: false,
             },
         );
         tracing::info!(room = %self.id, player = %pid, "player joined");
@@ -152,11 +243,80 @@ impl Room {
     }
 
     async fn on_leave(&mut self, player: PlayerId) {
+        // 明示的な退室は常に削除
         if self.members.remove(&player).is_some() {
             tracing::info!(room = %self.id, %player, "player left");
             if !self.members.is_empty() {
                 self.broadcast_room_state().await;
             }
+        }
+    }
+
+    async fn on_disconnect(&mut self, player: PlayerId) {
+        // 進行中(Playing/BetweenHands)で seated なら席を残して Suspended、
+        // それ以外(Lobby/Ended)は普通に退室扱い
+        let in_session = matches!(
+            self.phase,
+            LocalPhase::Playing | LocalPhase::BetweenHands
+        );
+        let is_seated = self
+            .session
+            .as_ref()
+            .map(|s| s.seat_of(&player).is_some())
+            .unwrap_or(false);
+
+        if in_session && is_seated {
+            if let Some(m) = self.members.get_mut(&player) {
+                m.conn = ConnState::Suspended;
+                m.suspended_since = Some(Instant::now());
+                m.notified_disconnect = false;
+                tracing::info!(room = %self.id, %player, "player suspended (disconnect)");
+                self.broadcast_room_state().await;
+            }
+        } else if self.members.remove(&player).is_some() {
+            tracing::info!(room = %self.id, %player, "player disconnected (removed, not in session)");
+            if !self.members.is_empty() {
+                self.broadcast_room_state().await;
+            }
+        }
+    }
+
+    async fn on_tick(&mut self) {
+        // T2: 切断後 t2_notify が経過したら一度だけ PlayerDisconnected をブロードキャスト
+        let now = Instant::now();
+        let t2 = self.timers.t2_notify;
+        let mut to_notify: Vec<usize> = Vec::new();
+        for m in self.members.values_mut() {
+            if m.conn == ConnState::Suspended
+                && !m.notified_disconnect
+                && let Some(since) = m.suspended_since
+                && now.duration_since(since) >= t2
+            {
+                let seat = self
+                    .session
+                    .as_ref()
+                    .and_then(|s| s.seat_of(&m.info.player_id));
+                if let Some(s) = seat {
+                    to_notify.push(s);
+                }
+                m.notified_disconnect = true;
+            }
+        }
+        for seat in to_notify {
+            let since_ms = self
+                .members
+                .values()
+                .find(|m| {
+                    self.session
+                        .as_ref()
+                        .and_then(|s| s.seat_of(&m.info.player_id))
+                        == Some(seat)
+                })
+                .and_then(|m| m.suspended_since)
+                .map(|i| now.duration_since(i).as_millis() as u64)
+                .unwrap_or(0);
+            self.broadcast(ServerMessage::PlayerDisconnected { seat, since_ms })
+                .await;
         }
     }
 
@@ -279,12 +439,20 @@ impl Room {
                 .await;
             return;
         }
-        // Phase 5 で T3 経過チェックを入れる
-        self.send_to(
-            &by,
-            error("not_implemented", "AbortHand: Phase 5 で T3 タイマーと共に実装"),
-        )
-        .await;
+        if !self.any_seated_disconnect_exceeded(self.timers.t3_abort) {
+            self.send_to(
+                &by,
+                error(
+                    "too_early",
+                    "AbortHand は T3 経過(切断したプレイヤーがいる場合)後のみ可能",
+                ),
+            )
+            .await;
+            return;
+        }
+        // napo-core は途中の hand を「捨てる」操作を持たない。
+        // V1 では「セット全体を終了」として扱う(EndMatch と同等。次の Match を別部屋で開始する)。
+        self.end_match("aborted_by_host").await;
     }
 
     async fn on_end_match(&mut self, by: PlayerId) {
@@ -293,12 +461,40 @@ impl Room {
                 .await;
             return;
         }
-        // Phase 5 で T4 経過チェック
-        self.send_to(
-            &by,
-            error("not_implemented", "EndMatch: Phase 5 で T4 タイマーと共に実装"),
-        )
-        .await;
+        if !self.any_seated_disconnect_exceeded(self.timers.t4_end) {
+            self.send_to(
+                &by,
+                error(
+                    "too_early",
+                    "EndMatch は T4 経過(切断したプレイヤーがいる場合)後のみ可能",
+                ),
+            )
+            .await;
+            return;
+        }
+        self.end_match("ended_by_host").await;
+    }
+
+    fn any_seated_disconnect_exceeded(&self, threshold: Duration) -> bool {
+        let now = Instant::now();
+        self.members.values().any(|m| {
+            m.conn == ConnState::Suspended
+                && m.suspended_since
+                    .map(|i| now.duration_since(i) >= threshold)
+                    .unwrap_or(false)
+        })
+    }
+
+    async fn end_match(&mut self, reason: &str) {
+        let final_scores = self
+            .session
+            .as_ref()
+            .map(|s| s.cumulative_scores())
+            .unwrap_or_default();
+        tracing::info!(room = %self.id, %reason, ?final_scores, "match ended early");
+        self.phase = LocalPhase::Ended;
+        self.broadcast(ServerMessage::MatchEnded { final_scores }).await;
+        self.broadcast_room_state().await;
     }
 
     async fn dispatch_outcome(&mut self, outcome: ApplyOutcome) {
@@ -395,7 +591,7 @@ impl Room {
                     .session
                     .as_ref()
                     .and_then(|s| s.seat_of(&m.info.player_id)),
-                online: true,
+                online: m.conn == ConnState::Online,
             })
             .collect();
         players.sort_by(|a, b| a.player_id.cmp(&b.player_id));
@@ -427,6 +623,7 @@ impl Room {
 
     async fn broadcast(&self, msg: ServerMessage) {
         for member in self.members.values() {
+            // Suspended でもチャネルが生きていれば送る(再接続時にバッファ取得は今は実装せず)
             let _ = member.sender.send(msg.clone()).await;
         }
     }

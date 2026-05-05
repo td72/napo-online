@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::db::Db;
 use crate::protocol::{PlayerId, RoomId, ServerMessage};
-use crate::room::{PlayerInfo, Room, RoomCommand};
+use crate::room::{PlayerInfo, Room, RoomCommand, RoomTimers};
 
 const ROOM_ID_LEN: usize = 8;
 /// 0 / O / 1 / l / I を除いた可読英数字
@@ -21,6 +21,7 @@ pub struct Hub {
     max_rooms: usize,
     hands_per_match: u32,
     db: Db,
+    timers: RoomTimers,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -44,12 +45,13 @@ pub struct RoomHandle {
 }
 
 impl Hub {
-    pub fn new(max_rooms: usize, hands_per_match: u32, db: Db) -> Self {
+    pub fn new(max_rooms: usize, hands_per_match: u32, db: Db, timers: RoomTimers) -> Self {
         Self {
             rooms: Arc::new(DashMap::new()),
             max_rooms,
             hands_per_match,
             db,
+            timers,
         }
     }
 
@@ -66,6 +68,7 @@ impl Hub {
             MAX_PLAYERS_PER_ROOM,
             self.hands_per_match,
             self.db.clone(),
+            self.timers,
         );
 
         let rooms_for_cleanup = self.rooms.clone();

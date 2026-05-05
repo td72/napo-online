@@ -21,7 +21,12 @@ async fn main() -> Result<()> {
     let verifier = build_verifier(&cfg).await?;
     let db = Db::open(&cfg.db_path).await?;
     db.migrate().await?;
-    let hub = Hub::new(cfg.max_rooms, cfg.hands_per_match, db.clone());
+    let timers = napo_online::room::RoomTimers {
+        t2_notify: cfg.t2_notify,
+        t3_abort: cfg.t3_abort,
+        t4_end: cfg.t4_end,
+    };
+    let hub = Hub::new(cfg.max_rooms, cfg.hands_per_match, db.clone(), timers);
     let state = AppState {
         cfg: cfg.clone(),
         verifier,
