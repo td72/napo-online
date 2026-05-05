@@ -14,6 +14,40 @@ use crate::now_unix;
 use crate::protocol::{ClientMessage, ServerMessage};
 use crate::room::{PlayerInfo, RoomCommand};
 
+/// 1接続あたりのレート制限。`refill_per_sec` トークン/秒の充填、上限 `capacity`(burst)。
+/// `try_take` で 1メッセージ消費を試行。
+#[derive(Debug)]
+struct TokenBucket {
+    capacity: f64,
+    refill_per_sec: f64,
+    tokens: f64,
+    last: Instant,
+}
+
+impl TokenBucket {
+    fn new(refill_per_sec: u32, burst: u32) -> Self {
+        let capacity = burst as f64;
+        Self {
+            capacity,
+            refill_per_sec: refill_per_sec as f64,
+            tokens: capacity,
+            last: Instant::now(),
+        }
+    }
+
+    fn try_take(&mut self, now: Instant) -> bool {
+        let elapsed = now.duration_since(self.last).as_secs_f64();
+        self.tokens = (self.tokens + elapsed * self.refill_per_sec).min(self.capacity);
+        self.last = now;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 const OUTBOUND_BUFFER: usize = 64;
 const DEFAULT_DISPLAY_NAME: &str = "anonymous";
 
@@ -34,7 +68,12 @@ struct Session {
     msg_tx: mpsc::Sender<ServerMessage>,
     display_name: String,
     current_room: Option<RoomHandle>,
+    bucket: TokenBucket,
+    /// 連続でレート制限に引っかかった回数。閾値超過で切断
+    consecutive_throttles: u32,
 }
+
+const MAX_CONSECUTIVE_THROTTLES: u32 = 30;
 
 async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
     tracing::info!(email = %claims.email, "ws connected");
@@ -60,12 +99,15 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
     }
 
     let t1 = session_state_t1(&state);
+    let rate = state.cfg.ws_rate_limit_per_sec;
     let mut session = Session {
         claims,
         state,
         msg_tx,
         display_name: existing_handle.unwrap_or_else(|| DEFAULT_DISPLAY_NAME.to_string()),
         current_room: None,
+        bucket: TokenBucket::new(rate, rate.saturating_mul(2).max(1)),
+        consecutive_throttles: 0,
     };
     let mut last_activity = Instant::now();
 
@@ -121,6 +163,29 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
 }
 
 async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) -> bool {
+    if !session.bucket.try_take(Instant::now()) {
+        session.consecutive_throttles += 1;
+        let _ = send(
+            socket,
+            &error_msg(
+                "rate_limited",
+                "too many messages — slow down or you'll be disconnected",
+            ),
+        )
+        .await;
+        if session.consecutive_throttles >= MAX_CONSECUTIVE_THROTTLES {
+            tracing::warn!(
+                email = %session.claims.email,
+                consecutive = session.consecutive_throttles,
+                "ws rate limit exceeded — closing"
+            );
+            let _ = socket.send(Message::Close(None)).await;
+            return false;
+        }
+        return true;
+    }
+    session.consecutive_throttles = 0;
+
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
@@ -333,4 +398,50 @@ fn error_msg(code: &str, message: &str) -> ServerMessage {
 
 fn session_state_t1(state: &AppState) -> std::time::Duration {
     state.cfg.t1_detect
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn token_bucket_starts_full_and_refills() {
+        let start = Instant::now();
+        let mut b = TokenBucket {
+            capacity: 5.0,
+            refill_per_sec: 10.0,
+            tokens: 5.0,
+            last: start,
+        };
+        // 5発までは即時取れる(burst 5)
+        for _ in 0..5 {
+            assert!(b.try_take(start));
+        }
+        // 直後の 6発目はダメ
+        assert!(!b.try_take(start));
+        // 0.3 秒後 = 3 トークン補充されているはず → 3発取れる
+        let later = start + Duration::from_millis(300);
+        assert!(b.try_take(later));
+        assert!(b.try_take(later));
+        assert!(b.try_take(later));
+        assert!(!b.try_take(later));
+    }
+
+    #[test]
+    fn token_bucket_caps_at_capacity_after_long_idle() {
+        let start = Instant::now();
+        let mut b = TokenBucket {
+            capacity: 5.0,
+            refill_per_sec: 10.0,
+            tokens: 0.0,
+            last: start,
+        };
+        // 1 時間アイドル後でも capacity 上限まで
+        let later = start + Duration::from_secs(3600);
+        for _ in 0..5 {
+            assert!(b.try_take(later));
+        }
+        assert!(!b.try_take(later));
+    }
 }
