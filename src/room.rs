@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use napo_core::Match;
 use rand::RngExt;
 use rand::seq::SliceRandom;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::time::interval;
 
@@ -12,6 +14,44 @@ use crate::now_unix;
 use crate::protocol::{
     PlayerId, PlayerView, RoomId, RoomPhase as WireRoomPhase, RoomView, ServerMessage, WireAction,
 };
+
+/// 永続化用のスナップショット。`napo_core::Match` を直接埋め込む(serde feature 必須)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomSnapshot {
+    pub schema: u32,
+    pub room_id: RoomId,
+    pub host: PlayerId,
+    pub hands_per_match: u32,
+    pub max_players: usize,
+    pub members: Vec<MemberSnapshot>,
+    pub phase: PhaseSnapshot,
+    pub session: Option<SessionSnapshot>,
+    pub next_ready: Vec<usize>,
+    pub current_hand_started_at: Option<i64>,
+}
+
+pub const ROOM_SNAPSHOT_SCHEMA: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberSnapshot {
+    pub player_id: PlayerId,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PhaseSnapshot {
+    Lobby,
+    Playing,
+    BetweenHands,
+    Ended,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSnapshot {
+    pub session: Match,
+    pub seat_to_player: Vec<PlayerId>,
+    pub seat_display_names: Vec<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct PlayerInfo {
@@ -64,7 +104,8 @@ enum ConnState {
 
 struct RoomMember {
     info: PlayerInfo,
-    sender: mpsc::Sender<ServerMessage>,
+    /// 生きている WS チャンネル。スナップショット復元直後は None(全員 Suspended で再接続待ち)。
+    sender: Option<mpsc::Sender<ServerMessage>>,
     conn: ConnState,
     /// Suspended になった時刻。T2/T3/T4 判定の起点。
     suspended_since: Option<Instant>,
@@ -121,6 +162,117 @@ impl Room {
         }
     }
 
+    /// スナップショットから復元する。全 member は sender=None / Suspended で
+    /// 入っており、JoinRoom (= 再接続)で sender がセットされて Online に戻る。
+    pub fn from_snapshot(
+        snapshot: RoomSnapshot,
+        rx: mpsc::Receiver<RoomCommand>,
+        db: Db,
+        timers: RoomTimers,
+    ) -> Self {
+        let session = snapshot.session.map(|s| {
+            GameSession::from_parts(
+                s.session,
+                s.seat_to_player,
+                s.seat_display_names,
+                snapshot.hands_per_match,
+            )
+        });
+        let now = Instant::now();
+        let mut members: HashMap<PlayerId, RoomMember> = HashMap::new();
+        for m in snapshot.members {
+            members.insert(
+                m.player_id.clone(),
+                RoomMember {
+                    info: PlayerInfo {
+                        player_id: m.player_id,
+                        display_name: m.display_name,
+                    },
+                    sender: None,
+                    conn: ConnState::Suspended,
+                    suspended_since: Some(now),
+                    notified_disconnect: false,
+                },
+            );
+        }
+        let phase = match snapshot.phase {
+            PhaseSnapshot::Lobby => LocalPhase::Lobby,
+            PhaseSnapshot::Playing => LocalPhase::Playing,
+            PhaseSnapshot::BetweenHands => LocalPhase::BetweenHands,
+            PhaseSnapshot::Ended => LocalPhase::Ended,
+        };
+        Self {
+            id: snapshot.room_id,
+            host: snapshot.host,
+            members,
+            rx,
+            max_players: snapshot.max_players,
+            phase,
+            session,
+            next_ready: snapshot.next_ready.into_iter().collect(),
+            hands_per_match: snapshot.hands_per_match,
+            db,
+            timers,
+            current_hand_started_at: snapshot.current_hand_started_at,
+        }
+    }
+
+    fn snapshot(&self) -> RoomSnapshot {
+        let session = self.session.as_ref().map(|s| SessionSnapshot {
+            session: s.match_session().clone(),
+            seat_to_player: s.seat_to_player().to_vec(),
+            seat_display_names: s.seat_display_names().to_vec(),
+        });
+        RoomSnapshot {
+            schema: ROOM_SNAPSHOT_SCHEMA,
+            room_id: self.id.clone(),
+            host: self.host.clone(),
+            hands_per_match: self.hands_per_match,
+            max_players: self.max_players,
+            members: self
+                .members
+                .values()
+                .map(|m| MemberSnapshot {
+                    player_id: m.info.player_id.clone(),
+                    display_name: m.info.display_name.clone(),
+                })
+                .collect(),
+            phase: match self.phase {
+                LocalPhase::Lobby => PhaseSnapshot::Lobby,
+                LocalPhase::Playing => PhaseSnapshot::Playing,
+                LocalPhase::BetweenHands => PhaseSnapshot::BetweenHands,
+                LocalPhase::Ended => PhaseSnapshot::Ended,
+            },
+            session,
+            next_ready: {
+                let mut v: Vec<usize> = self.next_ready.iter().copied().collect();
+                v.sort_unstable();
+                v
+            },
+            current_hand_started_at: self.current_hand_started_at,
+        }
+    }
+
+    async fn persist(&self) {
+        let snap = self.snapshot();
+        let json = match serde_json::to_string(&snap) {
+            Ok(j) => j,
+            Err(e) => {
+                tracing::error!(room = %self.id, error = %e, "snapshot serialize failed");
+                return;
+            }
+        };
+        if let Err(e) = self.db.save_room_snapshot(&self.id, &json, now_unix()).await {
+            tracing::warn!(room = %self.id, error = %e, "save_room_snapshot failed");
+        }
+    }
+
+    async fn unpersist(&self) {
+        if let Err(e) = self.db.delete_room_snapshot(&self.id).await {
+            tracing::warn!(room = %self.id, error = %e, "delete_room_snapshot failed");
+        }
+    }
+
     pub async fn run(mut self) {
         tracing::info!(room = %self.id, host = %self.host, "room actor started");
         let mut tick = interval(Duration::from_secs(1));
@@ -142,6 +294,8 @@ impl Room {
                 break;
             }
         }
+        // クリーンアップ: 終了状態 / 全員退室で snapshot を消す
+        self.unpersist().await;
         tracing::info!(room = %self.id, "room actor exiting");
     }
 
@@ -186,9 +340,9 @@ impl Room {
     }
 
     async fn on_join(&mut self, info: PlayerInfo, reply: mpsc::Sender<ServerMessage>) {
-        // 既存 seated player の再接続
+        // 既存 player の再接続(seated でも、Lobby で席無しでも、snapshot 復元直後でも)
         if let Some(existing) = self.members.get_mut(&info.player_id) {
-            existing.sender = reply.clone();
+            existing.sender = Some(reply.clone());
             existing.conn = ConnState::Online;
             existing.suspended_since = None;
             let was_notified = existing.notified_disconnect;
@@ -214,6 +368,7 @@ impl Room {
                 }
             }
             self.broadcast_room_state().await;
+            self.persist().await;
             return;
         }
 
@@ -235,7 +390,7 @@ impl Room {
             pid.clone(),
             RoomMember {
                 info,
-                sender: reply,
+                sender: Some(reply),
                 conn: ConnState::Online,
                 suspended_since: None,
                 notified_disconnect: false,
@@ -243,6 +398,7 @@ impl Room {
         );
         tracing::info!(room = %self.id, player = %pid, "player joined");
         self.broadcast_room_state().await;
+        self.persist().await;
     }
 
     async fn on_leave(&mut self, player: PlayerId) {
@@ -251,6 +407,7 @@ impl Room {
             tracing::info!(room = %self.id, %player, "player left");
             if !self.members.is_empty() {
                 self.broadcast_room_state().await;
+                self.persist().await;
             }
         }
     }
@@ -380,6 +537,7 @@ impl Room {
                 .await;
         }
         self.broadcast_room_state().await;
+        self.persist().await;
     }
 
     async fn on_submit_action(&mut self, player: PlayerId, action: WireAction) {
@@ -392,7 +550,10 @@ impl Room {
             return;
         };
         match session.apply(&player, action) {
-            Ok(outcome) => self.dispatch_outcome(outcome).await,
+            Ok(outcome) => {
+                self.dispatch_outcome(outcome).await;
+                self.persist().await;
+            }
             Err(e) => {
                 self.send_to(&player, error("invalid_action", &e.to_string()))
                     .await;
@@ -426,6 +587,7 @@ impl Room {
                 self.phase = LocalPhase::Playing;
                 self.current_hand_started_at = Some(now_unix());
                 self.dispatch_outcome(out).await;
+                self.persist().await;
             }
             Err(e) => {
                 tracing::error!(room = %self.id, error = %e, "start_next_hand failed");
@@ -496,6 +658,7 @@ impl Room {
         self.broadcast(ServerMessage::MatchEnded { final_scores })
             .await;
         self.broadcast_room_state().await;
+        self.unpersist().await;
     }
 
     async fn dispatch_outcome(&mut self, outcome: ApplyOutcome) {
@@ -542,6 +705,7 @@ impl Room {
                     })
                     .await;
                     self.broadcast_room_state().await;
+                    self.unpersist().await;
                     return;
                 }
             }
@@ -628,14 +792,17 @@ impl Room {
 
     async fn broadcast(&self, msg: ServerMessage) {
         for member in self.members.values() {
-            // Suspended でもチャネルが生きていれば送る(再接続時にバッファ取得は今は実装せず)
-            let _ = member.sender.send(msg.clone()).await;
+            if let Some(s) = &member.sender {
+                let _ = s.send(msg.clone()).await;
+            }
         }
     }
 
     async fn send_to(&self, player: &PlayerId, msg: ServerMessage) {
-        if let Some(m) = self.members.get(player) {
-            let _ = m.sender.send(msg).await;
+        if let Some(m) = self.members.get(player)
+            && let Some(s) = &m.sender
+        {
+            let _ = s.send(msg).await;
         }
     }
 }

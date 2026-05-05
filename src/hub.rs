@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::db::Db;
 use crate::protocol::{PlayerId, RoomId, ServerMessage};
-use crate::room::{PlayerInfo, Room, RoomCommand, RoomTimers};
+use crate::room::{PlayerInfo, Room, RoomCommand, RoomSnapshot, RoomTimers};
 
 const ROOM_ID_LEN: usize = 8;
 /// 0 / O / 1 / l / I を除いた可読英数字
@@ -88,14 +88,60 @@ impl Hub {
         info: PlayerInfo,
         reply: mpsc::Sender<ServerMessage>,
     ) -> Result<RoomHandle, JoinError> {
-        let tx = self.rooms.get(room_id).ok_or(JoinError::NotFound)?.clone();
+        // 既に live な room actor があればそこへ
+        if let Some(entry) = self.rooms.get(room_id) {
+            let tx = entry.clone();
+            drop(entry);
+            tx.send(RoomCommand::Join { info, reply })
+                .await
+                .map_err(|_| JoinError::Closed)?;
+            return Ok(RoomHandle {
+                id: room_id.clone(),
+                tx,
+            });
+        }
+
+        // live actor が無い場合、snapshot からの復元を試みる
+        let snapshot_json = match self.db.load_room_snapshot(room_id).await {
+            Ok(Some(j)) => j,
+            Ok(None) => return Err(JoinError::NotFound),
+            Err(e) => {
+                tracing::warn!(room = %room_id, error = %e, "load_room_snapshot failed");
+                return Err(JoinError::NotFound);
+            }
+        };
+        let snapshot: RoomSnapshot = match serde_json::from_str(&snapshot_json) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(room = %room_id, error = %e, "snapshot deserialize failed; treating as not found");
+                return Err(JoinError::NotFound);
+            }
+        };
+        let tx = self.spawn_room_from_snapshot(snapshot);
         tx.send(RoomCommand::Join { info, reply })
             .await
             .map_err(|_| JoinError::Closed)?;
+        tracing::info!(room = %room_id, "room restored from snapshot");
         Ok(RoomHandle {
             id: room_id.clone(),
             tx,
         })
+    }
+
+    fn spawn_room_from_snapshot(&self, snapshot: RoomSnapshot) -> mpsc::Sender<RoomCommand> {
+        let room_id = snapshot.room_id.clone();
+        let (tx, rx) = mpsc::channel(ROOM_CMD_BUFFER);
+        let room = Room::from_snapshot(snapshot, rx, self.db.clone(), self.timers);
+
+        let rooms_for_cleanup = self.rooms.clone();
+        let id_for_cleanup = room_id.clone();
+        tokio::spawn(async move {
+            room.run().await;
+            rooms_for_cleanup.remove(&id_for_cleanup);
+        });
+
+        self.rooms.insert(room_id, tx.clone());
+        tx
     }
 
     pub fn room_count(&self) -> usize {

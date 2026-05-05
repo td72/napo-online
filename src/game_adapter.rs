@@ -71,6 +71,47 @@ impl GameSession {
         }
     }
 
+    /// スナップショットからの復元用。`session` には既存の `Match` を、`seat_to_player` /
+    /// `seat_display_names` には保存時の席割をそのまま渡す。
+    pub fn from_parts(
+        session: Match,
+        seat_to_player: Vec<PlayerId>,
+        seat_display_names: Vec<String>,
+        hands_per_match: u32,
+    ) -> Self {
+        assert_eq!(seat_to_player.len(), seat_display_names.len());
+        let last_phase = session.current_hand().phase().clone();
+        let player_to_seat: HashMap<_, _> = seat_to_player
+            .iter()
+            .enumerate()
+            .map(|(seat, p)| (p.clone(), seat))
+            .collect();
+        Self {
+            session,
+            seat_to_player,
+            seat_display_names,
+            player_to_seat,
+            hands_per_match,
+            last_phase,
+        }
+    }
+
+    pub fn match_session(&self) -> &Match {
+        &self.session
+    }
+
+    pub fn seat_to_player(&self) -> &[PlayerId] {
+        &self.seat_to_player
+    }
+
+    pub fn seat_display_names(&self) -> &[String] {
+        &self.seat_display_names
+    }
+
+    pub fn hands_per_match(&self) -> u32 {
+        self.hands_per_match
+    }
+
     pub fn seat_assignments(&self) -> Vec<SeatAssignment> {
         self.seat_to_player
             .iter()

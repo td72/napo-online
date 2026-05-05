@@ -48,6 +48,16 @@ DROP TABLE users;
 ALTER TABLE users_new RENAME TO users;
 "#;
 
+/// 進行中の Room のスナップショットを格納するテーブル。
+/// snapshot_json には RoomSnapshot を JSON 化したものを入れる。
+const SCHEMA_V3_ROOM_SNAPSHOTS: &str = r#"
+CREATE TABLE IF NOT EXISTS room_snapshots (
+    room_id       TEXT PRIMARY KEY,
+    snapshot_json TEXT NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+"#;
+
 #[derive(Clone)]
 pub struct Db {
     conn: Arc<Mutex<Connection>>,
@@ -155,7 +165,80 @@ impl Db {
                 conn.pragma_update(None, "user_version", 2)
                     .context("bump user_version to 2")?;
             }
+            if current < 3 {
+                conn.execute_batch(SCHEMA_V3_ROOM_SNAPSHOTS)
+                    .context("apply schema v3 (room_snapshots)")?;
+                conn.pragma_update(None, "user_version", 3)
+                    .context("bump user_version to 3")?;
+            }
             Ok(())
+        })
+        .await?
+    }
+
+    pub async fn save_room_snapshot(
+        &self,
+        room_id: &str,
+        snapshot_json: &str,
+        now: i64,
+    ) -> Result<()> {
+        let conn = self.conn.clone();
+        let room_id = room_id.to_string();
+        let snapshot_json = snapshot_json.to_string();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let conn = conn.lock().expect("db poisoned");
+            conn.execute(
+                "INSERT INTO room_snapshots (room_id, snapshot_json, updated_at)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(room_id) DO UPDATE SET
+                    snapshot_json = excluded.snapshot_json,
+                    updated_at = excluded.updated_at",
+                params![room_id, snapshot_json, now],
+            )?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub async fn load_room_snapshot(&self, room_id: &str) -> Result<Option<String>> {
+        let conn = self.conn.clone();
+        let room_id = room_id.to_string();
+        tokio::task::spawn_blocking(move || -> Result<Option<String>> {
+            let conn = conn.lock().expect("db poisoned");
+            conn.query_row(
+                "SELECT snapshot_json FROM room_snapshots WHERE room_id = ?1",
+                params![room_id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(Into::into)
+        })
+        .await?
+    }
+
+    pub async fn delete_room_snapshot(&self, room_id: &str) -> Result<()> {
+        let conn = self.conn.clone();
+        let room_id = room_id.to_string();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let conn = conn.lock().expect("db poisoned");
+            conn.execute(
+                "DELETE FROM room_snapshots WHERE room_id = ?1",
+                params![room_id],
+            )?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub async fn list_room_snapshot_ids(&self) -> Result<Vec<String>> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+            let conn = conn.lock().expect("db poisoned");
+            let mut stmt = conn.prepare("SELECT room_id FROM room_snapshots")?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
         })
         .await?
     }
@@ -482,6 +565,39 @@ mod tests {
         // 同じ email の更新は弾かれない(自分の handle)
         let r = db.upsert_user("a@x.com", "Alice", now() + 1).await.unwrap();
         assert_eq!(r, UpsertResult::Ok);
+    }
+
+    #[tokio::test]
+    async fn room_snapshot_save_load_delete_roundtrip() {
+        let db = fresh_db().await;
+        assert!(db.load_room_snapshot("R1").await.unwrap().is_none());
+
+        db.save_room_snapshot("R1", r#"{"hello":"world"}"#, 100)
+            .await
+            .unwrap();
+        let s = db.load_room_snapshot("R1").await.unwrap().unwrap();
+        assert_eq!(s, r#"{"hello":"world"}"#);
+
+        // upsert: 同じ room_id で再度保存すると上書き
+        db.save_room_snapshot("R1", r#"{"hello":"updated"}"#, 200)
+            .await
+            .unwrap();
+        let s2 = db.load_room_snapshot("R1").await.unwrap().unwrap();
+        assert_eq!(s2, r#"{"hello":"updated"}"#);
+
+        db.delete_room_snapshot("R1").await.unwrap();
+        assert!(db.load_room_snapshot("R1").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn list_room_snapshot_ids_returns_all() {
+        let db = fresh_db().await;
+        db.save_room_snapshot("R1", "{}", 100).await.unwrap();
+        db.save_room_snapshot("R2", "{}", 100).await.unwrap();
+        db.save_room_snapshot("R3", "{}", 100).await.unwrap();
+        let mut ids = db.list_room_snapshot_ids().await.unwrap();
+        ids.sort();
+        assert_eq!(ids, vec!["R1", "R2", "R3"]);
     }
 
     #[tokio::test]
