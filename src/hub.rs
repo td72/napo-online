@@ -18,6 +18,7 @@ const ROOM_CMD_BUFFER: usize = 64;
 pub struct Hub {
     rooms: Arc<DashMap<RoomId, mpsc::Sender<RoomCommand>>>,
     max_rooms: usize,
+    hands_per_match: u32,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -41,10 +42,11 @@ pub struct RoomHandle {
 }
 
 impl Hub {
-    pub fn new(max_rooms: usize) -> Self {
+    pub fn new(max_rooms: usize, hands_per_match: u32) -> Self {
         Self {
             rooms: Arc::new(DashMap::new()),
             max_rooms,
+            hands_per_match,
         }
     }
 
@@ -54,7 +56,13 @@ impl Hub {
         }
         let room_id = self.generate_unique_id();
         let (tx, rx) = mpsc::channel(ROOM_CMD_BUFFER);
-        let room = Room::new(room_id.clone(), host, rx, MAX_PLAYERS_PER_ROOM);
+        let room = Room::new(
+            room_id.clone(),
+            host,
+            rx,
+            MAX_PLAYERS_PER_ROOM,
+            self.hands_per_match,
+        );
 
         let rooms_for_cleanup = self.rooms.clone();
         let id_for_cleanup = room_id.clone();

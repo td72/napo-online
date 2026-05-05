@@ -87,6 +87,10 @@ impl GameSession {
         self.session.cumulative_scores().to_vec()
     }
 
+    pub fn base_seed(&self) -> u64 {
+        self.session.base_seed()
+    }
+
     pub fn observations_for_all(&self) -> HashMap<PlayerId, WireObservation> {
         self.player_to_seat
             .iter()
@@ -101,6 +105,14 @@ impl GameSession {
 
     pub fn current_player(&self) -> Option<usize> {
         self.session.current_hand().current_player()
+    }
+
+    pub fn seat_of(&self, player: &PlayerId) -> Option<usize> {
+        self.player_to_seat.get(player).copied()
+    }
+
+    pub fn player_at(&self, seat: usize) -> Option<&PlayerId> {
+        self.seat_to_player.get(seat)
     }
 
     pub fn is_hand_finished(&self) -> bool {

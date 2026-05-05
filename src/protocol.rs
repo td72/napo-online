@@ -83,6 +83,9 @@ pub enum ServerMessage {
     MatchStarted {
         hand_count: u32,
         seats: Vec<SeatAssignment>,
+        /// 1局目のシード。`base_seed = seed`、各局は `seed + hand_index` で生成される(`napo_core::Match`)。
+        /// クライアントが `napo_core::Match::new(Rules::default(), seed)` で同じ局を再現できる。
+        match_seed: u64,
     },
     HandEnded {
         scores: Vec<i32>,
@@ -408,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn match_started_carries_seat_assignments() {
+    fn match_started_carries_seat_assignments_and_seed() {
         let m = ServerMessage::MatchStarted {
             hand_count: 10,
             seats: vec![SeatAssignment {
@@ -416,14 +419,20 @@ mod tests {
                 player_id: "alice@example.com".into(),
                 display_name: "alice".into(),
             }],
+            match_seed: 42,
         };
         let s = serde_json::to_string(&m).unwrap();
         let back: ServerMessage = serde_json::from_str(&s).unwrap();
         match back {
-            ServerMessage::MatchStarted { hand_count, seats } => {
+            ServerMessage::MatchStarted {
+                hand_count,
+                seats,
+                match_seed,
+            } => {
                 assert_eq!(hand_count, 10);
                 assert_eq!(seats.len(), 1);
                 assert_eq!(seats[0].seat, 0);
+                assert_eq!(match_seed, 42);
             }
             _ => panic!("wrong variant"),
         }

@@ -24,12 +24,24 @@ pub struct Claims {
 }
 
 impl Claims {
-    fn dev() -> Self {
+    fn dev(email: String) -> Self {
         Self {
-            sub: "dev".into(),
-            email: "dev@local".into(),
+            sub: email.clone(),
+            email,
         }
     }
+}
+
+/// DEV_MODE 専用: クエリパラメータ `?dev_email=alice@local` から identity を取り出す。
+/// 統合テスト/ローカル開発で複数プレイヤーを区別したいときに使う。
+fn extract_dev_email(uri: &axum::http::Uri) -> Option<String> {
+    let query = uri.query()?;
+    for pair in query.split('&') {
+        if let Some(rest) = pair.strip_prefix("dev_email=") {
+            return Some(rest.to_string());
+        }
+    }
+    None
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,7 +129,8 @@ pub async fn require_access(
     next: Next,
 ) -> Result<Response, AppError> {
     let claims = if state.cfg.dev_mode {
-        Claims::dev()
+        let email = extract_dev_email(req.uri()).unwrap_or_else(|| "dev@local".to_string());
+        Claims::dev(email)
     } else {
         let verifier = state
             .verifier
