@@ -1,0 +1,39 @@
+[Unit]
+Description=Napo Online Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=napo
+Group=napo
+WorkingDirectory=/opt/napo
+ExecStart=/opt/napo/napo-online
+Restart=on-failure
+RestartSec=3s
+
+EnvironmentFile=/etc/napo/napo.env
+
+# リソース上限(さくら VPS 1G 想定)
+MemoryMax=400M
+MemoryHigh=300M
+TasksMax=300
+CPUQuota=80%
+LimitNOFILE=4096
+
+# ハードニング
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/napo
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target
