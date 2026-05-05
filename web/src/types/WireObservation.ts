@@ -7,4 +7,19 @@ import type { WirePlayedCard } from "./WirePlayedCard";
 /**
  * プレイヤー視点のゲーム状態。`napo_core::Observation` を wire 形式に変換したもの。
  */
-export type WireObservation = { player: number, num_players: number, hand: Array<string>, bid_history: Array<WireBidEntry>, current_bid: WireCurrentBid | null, declarer: number | null, adjutant_card: string | null, adjutant_player: number | null, completed: Array<WireCompletedTrick>, current_trick: Array<WirePlayedCard>, trick_index: number, to_act: number | null, visible_widow: Array<string> | null, revealed_face_discards: Array<string>, };
+export type WireObservation = {
+  player: number;
+  num_players: number;
+  hand: Array<string>;
+  bid_history: Array<WireBidEntry>;
+  current_bid: WireCurrentBid | null;
+  declarer: number | null;
+  adjutant_card: string | null;
+  adjutant_player: number | null;
+  completed: Array<WireCompletedTrick>;
+  current_trick: Array<WirePlayedCard>;
+  trick_index: number;
+  to_act: number | null;
+  visible_widow: Array<string> | null;
+  revealed_face_discards: Array<string>;
+};
