@@ -1,32 +1,16 @@
-mod auth;
-mod config;
-mod error;
-mod game_adapter;
-mod http;
-mod hub;
-mod protocol;
-mod room;
-mod ws;
-
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
 use axum::Router;
-use axum::routing::get;
 use axum::middleware;
+use axum::routing::get;
 use tracing_subscriber::EnvFilter;
 
-use crate::auth::Verifier;
-use crate::config::Config;
-use crate::hub::Hub;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub cfg: Arc<Config>,
-    pub verifier: Option<Arc<Verifier>>,
-    pub hub: Hub,
-}
+use napo_online::auth::Verifier;
+use napo_online::config::Config;
+use napo_online::hub::Hub;
+use napo_online::{AppState, auth, http, ws};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -34,7 +18,7 @@ async fn main() -> Result<()> {
     init_tracing(&cfg.log);
 
     let verifier = build_verifier(&cfg).await?;
-    let hub = Hub::new(cfg.max_rooms);
+    let hub = Hub::new(cfg.max_rooms, cfg.hands_per_match);
     let state = AppState {
         cfg: cfg.clone(),
         verifier,
@@ -81,8 +65,7 @@ async fn build_verifier(cfg: &Config) -> Result<Option<Arc<Verifier>>> {
 }
 
 fn init_tracing(filter: &str) {
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(filter));
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .with_target(true)

@@ -117,23 +117,53 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
             handle_leave_room(session).await;
             true
         }
-        ClientMessage::StartMatch
-        | ClientMessage::AbortHand
-        | ClientMessage::EndMatch
-        | ClientMessage::NextHand
-        | ClientMessage::SubmitAction { .. } => {
-            // Phase 3 サブステップ C で Room actor へルーティングする
-            let _ = send(
-                socket,
-                &error_msg(
-                    "not_implemented",
-                    "game progression is not wired to Room yet",
-                ),
-            )
-            .await;
-            true
+        ClientMessage::StartMatch => {
+            forward_to_room(socket, session, RoomCommand::StartMatch {
+                by: session.claims.email.clone(),
+            })
+            .await
+        }
+        ClientMessage::AbortHand => {
+            forward_to_room(socket, session, RoomCommand::AbortHand {
+                by: session.claims.email.clone(),
+            })
+            .await
+        }
+        ClientMessage::EndMatch => {
+            forward_to_room(socket, session, RoomCommand::EndMatch {
+                by: session.claims.email.clone(),
+            })
+            .await
+        }
+        ClientMessage::NextHand => {
+            forward_to_room(socket, session, RoomCommand::NextHand {
+                player: session.claims.email.clone(),
+            })
+            .await
+        }
+        ClientMessage::SubmitAction { action } => {
+            forward_to_room(socket, session, RoomCommand::SubmitAction {
+                player: session.claims.email.clone(),
+                action,
+            })
+            .await
         }
     }
+}
+
+async fn forward_to_room(
+    socket: &mut WebSocket,
+    session: &Session,
+    cmd: RoomCommand,
+) -> bool {
+    let Some(rh) = session.current_room.as_ref() else {
+        let _ = send(socket, &error_msg("no_room", "you are not in a room")).await;
+        return true;
+    };
+    if rh.tx.send(cmd).await.is_err() {
+        let _ = send(socket, &error_msg("room_closed", "room is no longer reachable")).await;
+    }
+    true
 }
 
 async fn handle_create_room(socket: &mut WebSocket, session: &mut Session) {
