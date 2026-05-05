@@ -30,6 +30,28 @@ pub struct Config {
 }
 
 impl Config {
+    /// テスト用のデフォルト Config。dev_mode、in-memory DB、短いタイマー。
+    /// 統合テストや bench で `AppState` を組み立てる際の起点。
+    pub fn for_test() -> Self {
+        Self {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            log: "info".into(),
+            dev_mode: true,
+            static_dir: None,
+            db_path: ":memory:".into(),
+            cf_team: None,
+            cf_aud: None,
+            max_rooms: 8,
+            hands_per_match: 2,
+            t1_detect: Duration::from_secs(60),
+            t2_notify: Duration::from_millis(50),
+            t3_abort: Duration::from_millis(200),
+            t4_end: Duration::from_millis(500),
+            ws_max_msg_bytes: 8192,
+            ws_rate_limit_per_sec: 100,
+        }
+    }
+
     pub fn from_env() -> Result<Self> {
         let _ = dotenvy::dotenv();
 

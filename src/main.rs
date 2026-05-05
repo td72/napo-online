@@ -2,16 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use axum::Router;
-use axum::middleware;
-use axum::routing::get;
 use tracing_subscriber::EnvFilter;
 
-use napo_online::auth::Verifier;
+use napo_online::auth::{self, Verifier};
 use napo_online::config::Config;
 use napo_online::db::Db;
 use napo_online::hub::Hub;
-use napo_online::{AppState, auth, http, ws};
+use napo_online::{AppState, build_router};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -40,19 +37,7 @@ async fn main() -> Result<()> {
         "starting napo-online"
     );
 
-    let protected = Router::new()
-        .route("/api/me", get(http::me))
-        .route("/ws", get(ws::ws_handler))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth::require_access,
-        ));
-
-    let app = Router::new()
-        .route("/healthz", get(http::healthz))
-        .merge(protected)
-        .with_state(state);
-
+    let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
     axum::serve(listener, app).await?;
     Ok(())

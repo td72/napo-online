@@ -11,6 +11,10 @@ pub mod ws;
 
 use std::sync::Arc;
 
+use axum::Router;
+use axum::middleware;
+use axum::routing::get;
+
 use crate::auth::Verifier;
 use crate::config::Config;
 use crate::db::Db;
@@ -30,4 +34,21 @@ pub fn now_unix() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+/// 公開ルートと認証が必要なルートを束ねた Router を返す。
+/// `axum::serve(listener, build_router(state))` で起動できる。
+pub fn build_router(state: AppState) -> Router {
+    let protected = Router::new()
+        .route("/api/me", get(http::me))
+        .route("/ws", get(ws::ws_handler))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_access,
+        ));
+
+    Router::new()
+        .route("/healthz", get(http::healthz))
+        .merge(protected)
+        .with_state(state)
 }
