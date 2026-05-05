@@ -120,6 +120,53 @@ pub struct PlayerScore {
     pub score: Option<i32>,
 }
 
+#[derive(Serialize)]
+pub struct UserStatResponse {
+    pub email: String,
+    pub handle: String,
+    pub played: i64,
+    pub total_score: i64,
+    pub as_napoleon: PerRoleStat,
+    pub as_adjutant: PerRoleStat,
+    pub as_ally: PerRoleStat,
+}
+
+#[derive(Serialize)]
+pub struct PerRoleStat {
+    pub count: i64,
+    pub wins: i64,
+}
+
+/// プレイヤーごとの累積成績(終局済みの局のみ集計、total_score 降順)。
+pub async fn list_stats(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+) -> Result<Json<Vec<UserStatResponse>>, AppError> {
+    let stats = state.db.list_user_stats().await?;
+    let out = stats
+        .into_iter()
+        .map(|s| UserStatResponse {
+            email: s.email,
+            handle: s.handle,
+            played: s.played,
+            total_score: s.total_score,
+            as_napoleon: PerRoleStat {
+                count: s.as_napoleon_count,
+                wins: s.as_napoleon_wins,
+            },
+            as_adjutant: PerRoleStat {
+                count: s.as_adjutant_count,
+                wins: s.as_adjutant_wins,
+            },
+            as_ally: PerRoleStat {
+                count: s.as_ally_count,
+                wins: s.as_ally_wins,
+            },
+        })
+        .collect();
+    Ok(Json(out))
+}
+
 /// 終局済みの局を新しい順に返す。`?limit=N&offset=M`(デフォルト 20、最大 100)。
 pub async fn list_games(
     State(state): State<AppState>,

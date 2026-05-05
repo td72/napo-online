@@ -136,6 +136,27 @@
       </p>
     </div>
 
+    <div id="stats_panel" class="panel hidden">
+      <div class="row">
+        <h2 style="margin: 0; flex: 1">成績</h2>
+        <button id="refresh_stats">↻ 更新</button>
+      </div>
+      <table id="stats_table" class="small" style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="text-align: left; color: #9cf;">
+            <th>順</th>
+            <th>プレイヤー</th>
+            <th>局</th>
+            <th>累積</th>
+            <th>ナポ</th>
+            <th>副官</th>
+            <th>連合</th>
+          </tr>
+        </thead>
+        <tbody id="stats_body"></tbody>
+      </table>
+    </div>
+
     <div id="games_panel" class="panel hidden">
       <div class="row">
         <h2 style="margin: 0; flex: 1">最近の対戦 <span id="games_count" class="small"></span></h2>
@@ -227,10 +248,12 @@
           $("login").classList.add("hidden");
           $("profile").classList.remove("hidden");
           $("users_panel").classList.remove("hidden");
+          $("stats_panel").classList.remove("hidden");
           $("games_panel").classList.remove("hidden");
           $("lobby").classList.remove("hidden");
           fetchMe();
           fetchUsers();
+          fetchStats();
           fetchGames();
         };
         ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
@@ -276,6 +299,45 @@
           $("users_count").textContent = `${usersOffset} / ${data.total}`;
         } catch (e) {
           log("fetchUsers failed: " + e, "err");
+        }
+      }
+
+      async function fetchStats() {
+        try {
+          const r = await fetch("/api/stats");
+          if (!r.ok) return;
+          const stats = await r.json();
+          const body = $("stats_body");
+          body.innerHTML = "";
+          stats.forEach((s, idx) => {
+            const tr = document.createElement("tr");
+            tr.style.borderTop = "1px solid #333";
+            const totalClass = s.total_score > 0 ? "win" : s.total_score < 0 ? "lose" : "";
+            const napRate = s.as_napoleon.count > 0
+              ? ` (${Math.round((s.as_napoleon.wins / s.as_napoleon.count) * 100)}%)`
+              : "";
+            const adjRate = s.as_adjutant.count > 0
+              ? ` (${Math.round((s.as_adjutant.wins / s.as_adjutant.count) * 100)}%)`
+              : "";
+            const allyRate = s.as_ally.count > 0
+              ? ` (${Math.round((s.as_ally.wins / s.as_ally.count) * 100)}%)`
+              : "";
+            tr.innerHTML = `
+              <td>${idx + 1}</td>
+              <td><b>${escapeHtml(s.handle)}</b></td>
+              <td>${s.played}</td>
+              <td><span class="${totalClass}">${s.total_score >= 0 ? "+" : ""}${s.total_score}</span></td>
+              <td>${s.as_napoleon.wins}/${s.as_napoleon.count}${napRate}</td>
+              <td>${s.as_adjutant.wins}/${s.as_adjutant.count}${adjRate}</td>
+              <td>${s.as_ally.wins}/${s.as_ally.count}${allyRate}</td>
+            `;
+            body.appendChild(tr);
+          });
+          if (stats.length === 0) {
+            body.innerHTML = `<tr><td colspan="7" style="color: #777">(まだ集計対象の局がありません)</td></tr>`;
+          }
+        } catch (e) {
+          log("fetchStats failed: " + e, "err");
         }
       }
 
@@ -380,8 +442,9 @@
             phase = "between_hands";
             $("next_hand").classList.remove("hidden");
             $("scores").textContent = `累積: ${JSON.stringify(m.payload.cumulative)}`;
-            // DB に永続化されたはずなので履歴を更新
+            // DB に永続化されたはずなので履歴と成績を更新
             fetchGames();
+            fetchStats();
             break;
           case "next_hand_ready":
             log(`Next 投票: ${m.payload.ready_seats.join(",")}`);
@@ -686,6 +749,7 @@
       };
       $("refresh_users").onclick = () => fetchUsers(false);
       $("refresh_games").onclick = () => fetchGames(false);
+      $("refresh_stats").onclick = fetchStats;
       $("more_users").onclick = () => fetchUsers(true);
       $("more_games").onclick = () => fetchGames(true);
 
