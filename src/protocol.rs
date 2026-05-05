@@ -10,16 +10,54 @@ pub type RoomId = String;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum ClientMessage {
+    // ロビー
     Hello { display_name: String },
     CreateRoom,
     JoinRoom { room_id: RoomId },
     LeaveRoom,
+
+    // ホスト操作
+    StartMatch,
+    AbortHand,
+    EndMatch,
+
+    // 全員操作
+    NextHand,
+    SubmitAction { action: WireAction },
+
     Ping,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+pub enum WireAction {
+    Bid { tricks: u8, trump: WireTrump },
+    Pass,
+    DeclareAdjutant { card: String },
+    ExchangeWidow { discard: Vec<String> },
+    PlayCard { card: String },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum WireTrump {
+    S,
+    H,
+    D,
+    C,
+    NT,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WireBid {
+    pub tricks: u8,
+    pub trump: WireTrump,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum ServerMessage {
+    // 接続/ロビー
     Welcome {
         player_id: PlayerId,
         server_version: String,
@@ -32,6 +70,130 @@ pub enum ServerMessage {
         message: String,
     },
     Pong,
+
+    // ゲーム進行(A8: Event と Observation を両方送る)
+    Event {
+        event: PublicEvent,
+    },
+    Observation {
+        observation: WireObservation,
+    },
+
+    // セット管理
+    MatchStarted {
+        hand_count: u32,
+        seats: Vec<SeatAssignment>,
+    },
+    HandEnded {
+        scores: Vec<i32>,
+        cumulative: Vec<i32>,
+    },
+    NextHandReady {
+        ready_seats: Vec<usize>,
+    },
+    MatchEnded {
+        final_scores: Vec<i32>,
+    },
+
+    // 切断/再接続
+    PlayerDisconnected {
+        seat: usize,
+        since_ms: u64,
+    },
+    PlayerReconnected {
+        seat: usize,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+pub enum PublicEvent {
+    HandStarted {
+        hand_index: u32,
+        first_bidder: usize,
+    },
+    Bidded {
+        seat: usize,
+        bid: WireBid,
+    },
+    Passed {
+        seat: usize,
+    },
+    NapoleonDecided {
+        seat: usize,
+        bid: WireBid,
+    },
+    AdjutantDeclared {
+        card: String,
+    },
+    WidowExchanged {
+        revealed_face_cards: Vec<String>,
+    },
+    CardPlayed {
+        seat: usize,
+        card: String,
+    },
+    AdjutantRevealed {
+        seat: usize,
+    },
+    TrickWon {
+        seat: usize,
+    },
+    HandEnded {
+        scores: Vec<i32>,
+    },
+    HandRedealt,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SeatAssignment {
+    pub seat: usize,
+    pub player_id: PlayerId,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WirePlayedCard {
+    pub seat: usize,
+    pub card: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WireCompletedTrick {
+    pub plays: Vec<WirePlayedCard>,
+    pub winner: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WireBidEntry {
+    pub seat: usize,
+    /// None = Pass
+    pub bid: Option<WireBid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WireCurrentBid {
+    pub seat: usize,
+    pub bid: WireBid,
+}
+
+/// プレイヤー視点のゲーム状態。`napo_core::Observation` を wire 形式に変換したもの。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WireObservation {
+    pub player: usize,
+    pub num_players: usize,
+    pub hand: Vec<String>,
+    pub bid_history: Vec<WireBidEntry>,
+    pub current_bid: Option<WireCurrentBid>,
+    pub declarer: Option<usize>,
+    pub adjutant_card: Option<String>,
+    pub adjutant_player: Option<usize>,
+    pub completed: Vec<WireCompletedTrick>,
+    pub current_trick: Vec<WirePlayedCard>,
+    pub trick_index: usize,
+    pub to_act: Option<usize>,
+    pub visible_widow: Option<Vec<String>>,
+    pub revealed_face_discards: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,5 +311,121 @@ mod tests {
     #[test]
     fn protocol_version_pinned() {
         assert_eq!(PROTOCOL_VERSION, 1);
+    }
+
+    #[test]
+    fn wire_action_bid_serializes_with_trump_and_tricks() {
+        let a = WireAction::Bid {
+            tricks: 13,
+            trump: WireTrump::S,
+        };
+        let v = serde_json::to_value(&a).unwrap();
+        assert_eq!(
+            v,
+            json!({ "type": "bid", "payload": { "tricks": 13, "trump": "S" } })
+        );
+    }
+
+    #[test]
+    fn wire_action_no_trump_uppercased_as_nt() {
+        let a = WireAction::Bid {
+            tricks: 14,
+            trump: WireTrump::NT,
+        };
+        let s = serde_json::to_string(&a).unwrap();
+        assert!(s.contains(r#""trump":"NT""#));
+    }
+
+    #[test]
+    fn wire_action_play_card_roundtrip() {
+        let s = r#"{"type":"play_card","payload":{"card":"SA"}}"#;
+        let a: WireAction = serde_json::from_str(s).unwrap();
+        assert_eq!(
+            a,
+            WireAction::PlayCard {
+                card: "SA".into()
+            }
+        );
+    }
+
+    #[test]
+    fn wire_action_exchange_widow_roundtrip() {
+        let a = WireAction::ExchangeWidow {
+            discard: vec!["SA".into(), "H10".into()],
+        };
+        let s = serde_json::to_string(&a).unwrap();
+        let back: WireAction = serde_json::from_str(&s).unwrap();
+        assert_eq!(a, back);
+    }
+
+    #[test]
+    fn submit_action_roundtrip() {
+        let m = ClientMessage::SubmitAction {
+            action: WireAction::Pass,
+        };
+        let s = serde_json::to_string(&m).unwrap();
+        let back: ClientMessage = serde_json::from_str(&s).unwrap();
+        match back {
+            ClientMessage::SubmitAction { action } => {
+                assert_eq!(action, WireAction::Pass);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn public_event_card_played_roundtrip() {
+        let e = PublicEvent::CardPlayed {
+            seat: 2,
+            card: "S10".into(),
+        };
+        let s = serde_json::to_string(&e).unwrap();
+        let back: PublicEvent = serde_json::from_str(&s).unwrap();
+        assert_eq!(e, back);
+    }
+
+    #[test]
+    fn public_event_hand_redealt_unit_variant() {
+        let s = serde_json::to_string(&PublicEvent::HandRedealt).unwrap();
+        assert!(s.contains(r#""type":"hand_redealt""#));
+        let back: PublicEvent = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, PublicEvent::HandRedealt);
+    }
+
+    #[test]
+    fn server_message_event_wraps_public_event() {
+        let m = ServerMessage::Event {
+            event: PublicEvent::Passed { seat: 0 },
+        };
+        let s = serde_json::to_string(&m).unwrap();
+        let back: ServerMessage = serde_json::from_str(&s).unwrap();
+        match back {
+            ServerMessage::Event {
+                event: PublicEvent::Passed { seat },
+            } => assert_eq!(seat, 0),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn match_started_carries_seat_assignments() {
+        let m = ServerMessage::MatchStarted {
+            hand_count: 10,
+            seats: vec![SeatAssignment {
+                seat: 0,
+                player_id: "alice@example.com".into(),
+                display_name: "alice".into(),
+            }],
+        };
+        let s = serde_json::to_string(&m).unwrap();
+        let back: ServerMessage = serde_json::from_str(&s).unwrap();
+        match back {
+            ServerMessage::MatchStarted { hand_count, seats } => {
+                assert_eq!(hand_count, 10);
+                assert_eq!(seats.len(), 1);
+                assert_eq!(seats[0].seat, 0);
+            }
+            _ => panic!("wrong variant"),
+        }
     }
 }
