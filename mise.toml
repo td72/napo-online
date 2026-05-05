@@ -1,6 +1,10 @@
 [tools]
 rust = "stable"
 prek = "latest"
+node = "lts"
+# vp(global CLI)は curl install:
+#   curl -fsSL https://vite.plus | bash
+# vite-plus(per-project ライブラリ)は web/devDeps、vp create/migrate が自動で入れる。
 
 [tasks.dev]
 description = "Run server with DEV_MODE (no CF Access required)"
