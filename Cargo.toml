@@ -35,3 +35,7 @@ dashmap = "6"
 
 # ゲームロジック。napo-core が tag を切ったら docs §2.3 の git+[patch] 形式に切り替える。
 napo-core = { path = "../napo-core", features = ["serde"] }
+
+[dev-dependencies]
+tokio-tungstenite = "0.24"
+futures-util = "0.3"

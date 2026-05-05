@@ -2,7 +2,9 @@ mod auth;
 mod config;
 mod error;
 mod http;
+mod hub;
 mod protocol;
+mod room;
 mod ws;
 
 use std::sync::Arc;
@@ -16,11 +18,13 @@ use tracing_subscriber::EnvFilter;
 
 use crate::auth::Verifier;
 use crate::config::Config;
+use crate::hub::Hub;
 
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Arc<Config>,
     pub verifier: Option<Arc<Verifier>>,
+    pub hub: Hub,
 }
 
 #[tokio::main]
@@ -29,9 +33,11 @@ async fn main() -> Result<()> {
     init_tracing(&cfg.log);
 
     let verifier = build_verifier(&cfg).await?;
+    let hub = Hub::new(cfg.max_rooms);
     let state = AppState {
         cfg: cfg.clone(),
         verifier,
+        hub,
     };
 
     tracing::info!(
