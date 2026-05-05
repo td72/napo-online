@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
     let verifier = build_verifier(&cfg).await?;
     let db = Db::open(&cfg.db_path).await?;
     db.migrate().await?;
-    let hub = Hub::new(cfg.max_rooms, cfg.hands_per_match);
+    let hub = Hub::new(cfg.max_rooms, cfg.hands_per_match, db.clone());
     let state = AppState {
         cfg: cfg.clone(),
         verifier,

@@ -4,7 +4,9 @@ use rand::RngExt;
 use rand::seq::SliceRandom;
 use tokio::sync::mpsc;
 
-use crate::game_adapter::{ApplyOutcome, GameSession};
+use crate::db::{Db, GameOutcome, GameRecord};
+use crate::game_adapter::{ApplyOutcome, FinishedHandSummary, GameSession};
+use crate::now_unix;
 use crate::protocol::{
     PlayerId, PlayerView, RoomId, RoomPhase as WireRoomPhase, RoomView, ServerMessage, WireAction,
 };
@@ -67,6 +69,9 @@ pub struct Room {
     session: Option<GameSession>,
     next_ready: HashSet<usize>,
     hands_per_match: u32,
+    db: Db,
+    /// 進行中の局の開始時刻(unix sec)。StartMatch / NextHand で更新。
+    current_hand_started_at: Option<i64>,
 }
 
 impl Room {
@@ -76,6 +81,7 @@ impl Room {
         rx: mpsc::Receiver<RoomCommand>,
         max_players: usize,
         hands_per_match: u32,
+        db: Db,
     ) -> Self {
         Self {
             id,
@@ -87,6 +93,8 @@ impl Room {
             session: None,
             next_ready: HashSet::new(),
             hands_per_match,
+            db,
+            current_hand_started_at: None,
         }
     }
 
@@ -197,6 +205,7 @@ impl Room {
 
         self.session = Some(session);
         self.phase = LocalPhase::Playing;
+        self.current_hand_started_at = Some(now_unix());
         tracing::info!(room = %self.id, ?assignments, "match started");
 
         let match_seed = self.session.as_ref().unwrap().base_seed();
@@ -255,6 +264,7 @@ impl Room {
             Ok(out) => {
                 self.next_ready.clear();
                 self.phase = LocalPhase::Playing;
+                self.current_hand_started_at = Some(now_unix());
                 self.dispatch_outcome(out).await;
             }
             Err(e) => {
@@ -306,6 +316,11 @@ impl Room {
             .await;
         }
         if outcome.hand_finished {
+            // DB 永続化: 局のサマリを games / game_players に書く
+            if let Some(summary) = self.session.as_ref().and_then(|s| s.finished_hand_summary()) {
+                self.persist_finished_hand(&summary).await;
+            }
+
             if let Some(hand_scores) = &outcome.hand_scores {
                 // outcome.cumulative_scores は今局を含まないので、合算して送る
                 let cumulative: Vec<i32> = outcome
@@ -331,6 +346,41 @@ impl Room {
             }
             self.phase = LocalPhase::BetweenHands;
             self.next_ready.clear();
+        }
+    }
+
+    async fn persist_finished_hand(&self, summary: &FinishedHandSummary) {
+        let game_id = uuid::Uuid::new_v4().to_string();
+        let started_at = self.current_hand_started_at.unwrap_or_else(now_unix);
+        let ended_at = now_unix();
+        let players: Vec<(String, usize)> = summary
+            .seat_scores
+            .iter()
+            .enumerate()
+            .map(|(seat, (email, _))| (email.clone(), seat))
+            .collect();
+        let record = GameRecord {
+            id: game_id.clone(),
+            room_id: self.id.clone(),
+            started_at,
+            napoleon: Some(summary.declarer_player.clone()),
+            adjutant: summary.adjutant_player.clone(),
+            bid_value: Some(summary.bid_value as i32),
+            bid_suit: Some(summary.bid_suit.clone()),
+        };
+        if let Err(e) = self.db.record_game_start(record, players).await {
+            tracing::warn!(error = %e, "record_game_start failed");
+            return;
+        }
+        let outcome = GameOutcome {
+            ended_at,
+            napoleon_won: Some(summary.napoleon_won),
+            seat_scores: summary.seat_scores.clone(),
+        };
+        if let Err(e) = self.db.record_game_end(&game_id, outcome).await {
+            tracing::warn!(error = %e, "record_game_end failed");
+        } else {
+            tracing::info!(room = %self.id, %game_id, "hand persisted");
         }
     }
 
