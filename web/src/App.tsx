@@ -1,8 +1,11 @@
-// Phase B-3 / C 検証用 UI。store + WS の動作 + Card / Player ギャラリーを表示。
-// 本物のゲーム画面は Phase D で差し替え。
+// Phase B-3 / C / D 検証用 UI。store + WS の動作 + Card / Player ギャラリー +
+// PC/Mobile レイアウトの mock プレビュー(WS 接続なしでも視覚確認できる)。
+// Phase E で WS observation → vm 変換を実装。
 
 import { useState } from "react";
 import { TrumpCard } from "./components/Card";
+import { GameMobile } from "./components/GameMobile";
+import { GamePC, type GamePcViewModel } from "./components/GamePC";
 import { Avatar, PlayerBadge } from "./components/Player";
 import { useStore } from "./lib/store";
 
@@ -146,7 +149,158 @@ function App() {
       )}
 
       <ComponentGallery />
+      <GamePreview />
     </div>
+  );
+}
+
+/** Phase D で移植した GamePC / GameMobile を mock vm で表示。
+ * Phase E で実 WS state からの vm 派生に置き換える。 */
+function GamePreview() {
+  const [variant, setVariant] = useState<"pc" | "mobile" | "turn-pc" | "wait-pc">("turn-pc");
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(4);
+
+  const baseVm: GamePcViewModel = {
+    phase: "turn",
+    myHand: ["SA", "SK", "HJ", "H3", "DQ", "D9", "D4"],
+    myCaptured: ["HQ"],
+    opponents: [
+      {
+        name: "ナギ",
+        pos: "tl",
+        depth: "back",
+        status: "played",
+        cards: 6,
+        captured: ["DA", "CA"],
+        total: 1,
+      },
+      {
+        name: "リオ",
+        pos: "tr",
+        depth: "back",
+        status: "played",
+        cards: 6,
+        captured: ["S10", "DJ"],
+        total: -3,
+      },
+      {
+        name: "ミナト",
+        pos: "bl",
+        depth: "front",
+        status: "played",
+        cards: 6,
+        captured: ["DK", "C9"],
+        total: 5,
+        isNapo: true,
+      },
+      {
+        name: "アオイ",
+        pos: "br",
+        depth: "front",
+        status: "waiting",
+        cards: 6,
+        captured: ["SQ", "CJ"],
+        total: -2,
+        isPartner: true,
+      },
+    ],
+    trick: [
+      { player: "ミナト", card: "D7", rot: 5, lead: true },
+      { player: "アオイ", card: "CQ", rot: -4 },
+      { player: "ナギ", card: "HA", rot: -6, winner: true },
+      { player: "リオ", card: "HK", rot: 4 },
+    ],
+    leadSuit: "D",
+    napoName: "ミナト",
+    trumpSuit: "H",
+    isNoTrump: false,
+    bidValue: 13,
+    roomId: "NAP-3KF2",
+    gameNo: 4,
+    totalGames: 10,
+    trickNo: 4,
+    totalTricks: 10,
+  };
+
+  const waitVm: GamePcViewModel = { ...baseVm, phase: "wait" };
+  const vm = variant === "wait-pc" ? waitVm : baseVm;
+
+  const isMobile = variant === "mobile";
+
+  return (
+    <section style={{ ...panelStyle, padding: 0, overflow: "hidden" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "0.75rem 1rem",
+          background: "var(--bg-secondary)",
+          borderBottom: "1px solid var(--border-color)",
+          alignItems: "center",
+        }}
+      >
+        <h2 style={{ ...h2Style, margin: 0, flex: 1 }}>Game preview (mock)</h2>
+        {(["turn-pc", "wait-pc", "mobile"] as const).map((v) => (
+          <button
+            type="button"
+            key={v}
+            onClick={() => setVariant(v)}
+            style={{
+              padding: "0.25rem 0.6rem",
+              border: "1px solid var(--border-color)",
+              borderRadius: "var(--radius-sm)",
+              background: variant === v ? "var(--accent-secondary)" : "transparent",
+              color: variant === v ? "white" : "var(--text-primary)",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+              fontFamily: "var(--font-sans)",
+            }}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+      <div
+        style={{
+          width: "100%",
+          height: isMobile ? 720 : 800,
+          display: "flex",
+          justifyContent: "center",
+          background: "#efeae0",
+          padding: "1rem",
+        }}
+      >
+        <div
+          style={{
+            width: isMobile ? 402 : 1280,
+            maxWidth: "100%",
+            height: "100%",
+            border: "1px solid var(--border-color)",
+            borderRadius: "var(--radius-md)",
+            overflow: "hidden",
+            background: "var(--bg-primary)",
+          }}
+        >
+          {isMobile ? (
+            <GameMobile
+              vm={vm}
+              selectedIdx={selectedIdx}
+              onSelectCard={setSelectedIdx}
+              onPlay={() => alert(`play idx=${selectedIdx}`)}
+              myName="ハル"
+              myTotal={-1}
+            />
+          ) : (
+            <GamePC
+              vm={vm}
+              selectedIdx={selectedIdx}
+              onSelectCard={setSelectedIdx}
+              onPlay={() => alert(`play idx=${selectedIdx}`)}
+            />
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
