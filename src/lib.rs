@@ -42,6 +42,7 @@ pub fn build_router(state: AppState) -> Router {
     let protected = Router::new()
         .route("/api/me", get(http::me))
         .route("/api/users", get(http::list_users))
+        .route("/api/games", get(http::list_games))
         .route("/ws", get(ws::ws_handler))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
