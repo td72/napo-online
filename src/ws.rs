@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use crate::AppState;
 use crate::auth::Claims;
 use crate::hub::{CreateRoomError, JoinError, RoomHandle};
+use crate::now_unix;
 use crate::protocol::{ClientMessage, ServerMessage};
 use crate::room::{PlayerInfo, RoomCommand};
 
@@ -34,6 +35,17 @@ struct Session {
 
 async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
     tracing::info!(email = %claims.email, "ws connected");
+
+    // touch last_seen と既存ハンドル取得(再接続でも display_name を保持)
+    let _ = state.db.touch_last_seen(&claims.email, now_unix()).await;
+    let existing_handle = state
+        .db
+        .get_user(&claims.email)
+        .await
+        .ok()
+        .flatten()
+        .map(|u| u.handle);
+
     let (msg_tx, mut msg_rx) = mpsc::channel::<ServerMessage>(OUTBOUND_BUFFER);
 
     let welcome = ServerMessage::Welcome {
@@ -48,7 +60,7 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
         claims,
         state,
         msg_tx,
-        display_name: DEFAULT_DISPLAY_NAME.to_string(),
+        display_name: existing_handle.unwrap_or_else(|| DEFAULT_DISPLAY_NAME.to_string()),
         current_room: None,
     };
 
@@ -101,6 +113,14 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
     match msg {
         ClientMessage::Hello { display_name } => {
             tracing::info!(email = %session.claims.email, %display_name, "hello");
+            if let Err(e) = session
+                .state
+                .db
+                .upsert_user(&session.claims.email, &display_name, now_unix())
+                .await
+            {
+                tracing::warn!(error = %e, "upsert_user failed");
+            }
             session.display_name = display_name;
             true
         }
