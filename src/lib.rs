@@ -23,3 +23,11 @@ pub struct AppState {
     pub hub: Hub,
     pub db: Db,
 }
+
+/// 現在の Unix 秒。SystemTime が EPOCH より前(時計巻き戻し等)の場合は 0 を返す。
+pub fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
