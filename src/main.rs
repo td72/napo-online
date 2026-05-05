@@ -9,6 +9,7 @@ use tracing_subscriber::EnvFilter;
 
 use napo_online::auth::Verifier;
 use napo_online::config::Config;
+use napo_online::db::Db;
 use napo_online::hub::Hub;
 use napo_online::{AppState, auth, http, ws};
 
@@ -18,11 +19,14 @@ async fn main() -> Result<()> {
     init_tracing(&cfg.log);
 
     let verifier = build_verifier(&cfg).await?;
+    let db = Db::open(&cfg.db_path).await?;
+    db.migrate().await?;
     let hub = Hub::new(cfg.max_rooms, cfg.hands_per_match);
     let state = AppState {
         cfg: cfg.clone(),
         verifier,
         hub,
+        db,
     };
 
     tracing::info!(
