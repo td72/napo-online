@@ -105,6 +105,20 @@ pub struct GamePlayerRow {
 }
 
 #[derive(Debug, Clone)]
+pub struct UserStat {
+    pub email: String,
+    pub handle: String,
+    pub played: i64,
+    pub total_score: i64,
+    pub as_napoleon_count: i64,
+    pub as_napoleon_wins: i64,
+    pub as_adjutant_count: i64,
+    pub as_adjutant_wins: i64,
+    pub as_ally_count: i64,
+    pub as_ally_wins: i64,
+}
+
+#[derive(Debug, Clone)]
 pub struct GameSummary {
     pub id: String,
     pub room_id: String,
@@ -309,6 +323,58 @@ impl Db {
                 |r| r.get(0),
             )?;
             Ok(n as usize)
+        })
+        .await?
+    }
+
+    /// プレイヤーごとの成績を total_score 降順で返す。
+    /// 終局済み (`games.ended_at IS NOT NULL`) のみ集計対象。
+    pub async fn list_user_stats(&self) -> Result<Vec<UserStat>> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<Vec<UserStat>> {
+            let conn = conn.lock().expect("db poisoned");
+            let mut stmt = conn.prepare(
+                "SELECT
+                    u.email,
+                    u.handle,
+                    COUNT(g.id) AS played,
+                    COALESCE(SUM(gp.score), 0) AS total_score,
+                    COUNT(CASE WHEN g.napoleon = u.email THEN 1 END) AS as_nap_count,
+                    COUNT(CASE WHEN g.napoleon = u.email AND g.napoleon_won = 1 THEN 1 END) AS as_nap_wins,
+                    COUNT(CASE WHEN g.adjutant = u.email THEN 1 END) AS as_adj_count,
+                    COUNT(CASE WHEN g.adjutant = u.email AND g.napoleon_won = 1 THEN 1 END) AS as_adj_wins,
+                    COUNT(CASE
+                        WHEN g.id IS NOT NULL
+                         AND g.napoleon != u.email
+                         AND (g.adjutant IS NULL OR g.adjutant != u.email) THEN 1 END) AS as_ally_count,
+                    COUNT(CASE
+                        WHEN g.id IS NOT NULL
+                         AND g.napoleon != u.email
+                         AND (g.adjutant IS NULL OR g.adjutant != u.email)
+                         AND g.napoleon_won = 0 THEN 1 END) AS as_ally_wins
+                 FROM users u
+                 LEFT JOIN game_players gp ON gp.email = u.email
+                 LEFT JOIN games g ON g.id = gp.game_id AND g.ended_at IS NOT NULL
+                 GROUP BY u.email
+                 ORDER BY total_score DESC, played DESC, u.handle COLLATE NOCASE",
+            )?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok(UserStat {
+                        email: r.get(0)?,
+                        handle: r.get(1)?,
+                        played: r.get(2)?,
+                        total_score: r.get(3)?,
+                        as_napoleon_count: r.get(4)?,
+                        as_napoleon_wins: r.get(5)?,
+                        as_adjutant_count: r.get(6)?,
+                        as_adjutant_wins: r.get(7)?,
+                        as_ally_count: r.get(8)?,
+                        as_ally_wins: r.get(9)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
         })
         .await?
     }
@@ -750,6 +816,124 @@ mod tests {
         // offset > 件数 → 空
         let empty = db.list_recent_games(99, 99).await.unwrap();
         assert!(empty.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_user_stats_aggregates_napoleon_adjutant_and_score() {
+        let db = fresh_db().await;
+        for h in ["alice", "bob", "carol"] {
+            db.upsert_user(&format!("{h}@x.com"), h, 100).await.unwrap();
+        }
+        // game1: alice = napoleon, carol = adjutant, alice/carol 勝ち
+        db.record_game_start(
+            GameRecord {
+                id: "g1".into(),
+                room_id: "R".into(),
+                started_at: 0,
+                napoleon: Some("alice@x.com".into()),
+                adjutant: Some("carol@x.com".into()),
+                bid_value: Some(13),
+                bid_suit: Some("S".into()),
+            },
+            vec![
+                ("alice@x.com".into(), 0),
+                ("bob@x.com".into(), 1),
+                ("carol@x.com".into(), 2),
+            ],
+        )
+        .await
+        .unwrap();
+        db.record_game_end(
+            "g1",
+            GameOutcome {
+                ended_at: 100,
+                napoleon_won: Some(true),
+                seat_scores: vec![
+                    ("alice@x.com".into(), 4),
+                    ("bob@x.com".into(), -2),
+                    ("carol@x.com".into(), -2),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+        // game2: bob = napoleon、副官なし(一人立ち)、bob 負け
+        db.record_game_start(
+            GameRecord {
+                id: "g2".into(),
+                room_id: "R".into(),
+                started_at: 0,
+                napoleon: Some("bob@x.com".into()),
+                adjutant: None,
+                bid_value: Some(13),
+                bid_suit: Some("S".into()),
+            },
+            vec![
+                ("alice@x.com".into(), 0),
+                ("bob@x.com".into(), 1),
+                ("carol@x.com".into(), 2),
+            ],
+        )
+        .await
+        .unwrap();
+        db.record_game_end(
+            "g2",
+            GameOutcome {
+                ended_at: 200,
+                napoleon_won: Some(false),
+                seat_scores: vec![
+                    ("alice@x.com".into(), 1),
+                    ("bob@x.com".into(), -4),
+                    ("carol@x.com".into(), 1),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+
+        let stats = db.list_user_stats().await.unwrap();
+        let m: std::collections::HashMap<String, &UserStat> =
+            stats.iter().map(|s| (s.email.clone(), s)).collect();
+
+        let a = m.get("alice@x.com").unwrap();
+        assert_eq!(a.played, 2);
+        assert_eq!(a.total_score, 5);
+        assert_eq!(a.as_napoleon_count, 1);
+        assert_eq!(a.as_napoleon_wins, 1);
+        assert_eq!(a.as_adjutant_count, 0);
+        assert_eq!(a.as_ally_count, 1); // game2 で ally
+        assert_eq!(a.as_ally_wins, 1); // game2 で napoleon が負けたから ally の勝ち
+
+        let b = m.get("bob@x.com").unwrap();
+        assert_eq!(b.played, 2);
+        assert_eq!(b.total_score, -6);
+        assert_eq!(b.as_napoleon_count, 1);
+        assert_eq!(b.as_napoleon_wins, 0);
+        assert_eq!(b.as_ally_count, 1); // game1 で ally
+        assert_eq!(b.as_ally_wins, 0); // game1 で napoleon が勝ったから ally の負け
+
+        let c = m.get("carol@x.com").unwrap();
+        assert_eq!(c.played, 2);
+        assert_eq!(c.total_score, -1);
+        assert_eq!(c.as_adjutant_count, 1);
+        assert_eq!(c.as_adjutant_wins, 1);
+        assert_eq!(c.as_ally_count, 1); // game2 で ally
+        assert_eq!(c.as_ally_wins, 1); // game2 で napoleon が負け
+
+        // 並び順: total_score DESC → alice (5), carol (-1), bob (-6)
+        assert_eq!(stats[0].email, "alice@x.com");
+        assert_eq!(stats[1].email, "carol@x.com");
+        assert_eq!(stats[2].email, "bob@x.com");
+    }
+
+    #[tokio::test]
+    async fn list_user_stats_includes_users_with_no_games() {
+        let db = fresh_db().await;
+        db.upsert_user("a@x.com", "alice", 100).await.unwrap();
+        let stats = db.list_user_stats().await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].played, 0);
+        assert_eq!(stats[0].total_score, 0);
     }
 
     #[tokio::test]

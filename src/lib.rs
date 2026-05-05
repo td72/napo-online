@@ -43,6 +43,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/me", get(http::me))
         .route("/api/users", get(http::list_users))
         .route("/api/games", get(http::list_games))
+        .route("/api/stats", get(http::list_stats))
         .route("/ws", get(ws::ws_handler))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
