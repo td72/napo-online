@@ -1,42 +1,33 @@
-import { defineConfig } from 'vite-plus'
-import react from '@vitejs/plugin-react'
-import { resolve } from 'node:path'
+import { defineConfig } from "vite-plus";
+import react from "@vitejs/plugin-react";
+import { resolve } from "node:path";
 
 // https://vite.dev/config/
 export default defineConfig({
   build: {
-    outDir: resolve(import.meta.dirname, '../static/dist'),
+    outDir: resolve(import.meta.dirname, "../static/dist"),
     emptyOutDir: true,
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/ws': { target: 'ws://localhost:8080', ws: true },
+      "/api": "http://localhost:8080",
+      "/ws": { target: "ws://localhost:8080", ws: true },
     },
   },
   fmt: {},
   lint: {
-    "plugins": [
-      "oxc",
-      "typescript",
-      "unicorn",
-      "react"
-    ],
-    "categories": {
-      "correctness": "warn"
+    plugins: ["oxc", "typescript", "unicorn", "react"],
+    categories: {
+      correctness: "warn",
     },
-    "env": {
-      "builtin": true
+    env: {
+      builtin: true,
     },
-    "ignorePatterns": [
-      "dist"
-    ],
-    "overrides": [
+    ignorePatterns: ["dist"],
+    overrides: [
       {
-        "files": [
-          "**/*.{ts,tsx}"
-        ],
-        "rules": {
+        files: ["**/*.{ts,tsx}"],
+        rules: {
           "constructor-super": "error",
           "for-direction": "error",
           "getter-return": "error",
@@ -123,19 +114,19 @@ export default defineConfig({
           "react/only-export-components": [
             "error",
             {
-              "allowConstantExport": true
-            }
-          ]
+              allowConstantExport: true,
+            },
+          ],
         },
-        "env": {
-          "browser": true
-        }
-      }
+        env: {
+          browser: true,
+        },
+      },
     ],
-    "options": {
-      "typeAware": true,
-      "typeCheck": true
-    }
+    options: {
+      typeAware: true,
+      typeCheck: true,
+    },
   },
   plugins: [react()],
-})
+});

@@ -6,6 +6,10 @@ node = "lts"
 #   curl -fsSL https://vite.plus | bash
 # vite-plus(per-project ライブラリ)は web/devDeps、vp create/migrate が自動で入れる。
 
+# vp は ~/.vite-plus/bin/vp に入る(mise 管理外)。web 系 task は PATH に追加。
+[env]
+_.path = ["~/.vite-plus/bin"]
+
 [tasks.dev]
 description = "Run server with DEV_MODE (no CF Access required)"
 run = "NAPO_DEV_MODE=true NAPO_DB=./napo.db cargo run"
@@ -32,8 +36,44 @@ run = "cargo doc --no-deps"
 
 [tasks.ci]
 description = "Run the same checks as GitHub Actions CI"
-depends = ["fmt:check", "clippy", "test"]
+depends = ["fmt:check", "clippy", "test", "web:check"]
 
 [tasks.hooks]
 description = "Install prek hooks (commit + pre-push)"
 run = ["prek install", "prek install --hook-type pre-push"]
+
+# === Web (Vite+ + React) ===
+
+[tasks."web:dev"]
+description = "Run dev server (localhost:5173, /api と /ws を Rust:8080 へ proxy)"
+dir = "web"
+run = "vp dev"
+
+[tasks."web:build"]
+description = "Production build → ../static/dist"
+dir = "web"
+run = "vp build"
+
+[tasks."web:check"]
+description = "fmt + lint + tsc(format も自動修正)"
+dir = "web"
+run = "vp check --fix"
+
+[tasks."web:lint"]
+description = "Lint (Oxlint, type-aware)"
+dir = "web"
+run = "vp lint"
+
+[tasks."web:fmt"]
+description = "Format(Oxfmt)"
+dir = "web"
+run = "vp fmt"
+
+[tasks."web:test"]
+description = "Vitest (Vite+ 経由)"
+dir = "web"
+run = "vp test"
+
+[tasks."web:types"]
+description = "Rust の protocol.rs から TS 型を web/src/types/ に再生成"
+run = "cargo test --lib export_bindings --quiet"

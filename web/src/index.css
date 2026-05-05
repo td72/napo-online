@@ -30,8 +30,8 @@
   --ease-bounce: cubic-bezier(0.68, -0.55, 0.27, 1.55);
 
   /* swappable type pairing — runtime override 可能 */
-  --font-sans: 'Klee One', 'Hiragino Maru Gothic ProN', 'Yu Gothic UI', sans-serif;
-  --font-serif: 'DM Serif Display', 'Playfair Display', serif;
+  --font-sans: "Klee One", "Hiragino Maru Gothic ProN", "Yu Gothic UI", sans-serif;
+  --font-serif: "DM Serif Display", "Playfair Display", serif;
 
   /* paper grain (SVG noise を data URI で埋め込み) */
   --noise-opacity: 0.04;
