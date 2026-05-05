@@ -33,6 +33,21 @@ CREATE TABLE IF NOT EXISTS game_players (
 );
 "#;
 
+/// users.handle に大小無視の UNIQUE 制約を追加する。
+/// SQLite は ALTER TABLE で UNIQUE 追加できないので rename-recreate-copy で対応。
+const SCHEMA_V2_HANDLE_UNIQUE: &str = r#"
+CREATE TABLE users_new (
+    email      TEXT PRIMARY KEY,
+    handle     TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen  INTEGER NOT NULL,
+    UNIQUE(handle COLLATE NOCASE)
+);
+INSERT INTO users_new SELECT email, handle, created_at, last_seen FROM users;
+DROP TABLE users;
+ALTER TABLE users_new RENAME TO users;
+"#;
+
 #[derive(Clone)]
 pub struct Db {
     conn: Arc<Mutex<Connection>>,
@@ -62,6 +77,13 @@ pub struct GameOutcome {
     pub ended_at: i64,
     pub napoleon_won: Option<bool>,
     pub seat_scores: Vec<(String, i32)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpsertResult {
+    Ok,
+    /// 別 email が同じ handle (大小無視) を使っているため変更できない
+    HandleTaken,
 }
 
 impl Db {
@@ -95,7 +117,21 @@ impl Db {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {
             let conn = conn.lock().expect("db poisoned");
-            conn.execute_batch(SCHEMA_V1).context("apply schema v1")
+            let current: i64 = conn
+                .pragma_query_value(None, "user_version", |r| r.get(0))
+                .context("read user_version")?;
+            if current < 1 {
+                conn.execute_batch(SCHEMA_V1).context("apply schema v1")?;
+                conn.pragma_update(None, "user_version", 1)
+                    .context("bump user_version to 1")?;
+            }
+            if current < 2 {
+                conn.execute_batch(SCHEMA_V2_HANDLE_UNIQUE)
+                    .context("apply schema v2 (handle UNIQUE)")?;
+                conn.pragma_update(None, "user_version", 2)
+                    .context("bump user_version to 2")?;
+            }
+            Ok(())
         })
         .await?
     }
@@ -123,19 +159,57 @@ impl Db {
         .await?
     }
 
-    pub async fn upsert_user(&self, email: &str, handle: &str, now: i64) -> Result<()> {
+    pub async fn upsert_user(
+        &self,
+        email: &str,
+        handle: &str,
+        now: i64,
+    ) -> Result<UpsertResult> {
         let conn = self.conn.clone();
         let email = email.to_string();
         let handle = handle.to_string();
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        tokio::task::spawn_blocking(move || -> Result<UpsertResult> {
             let conn = conn.lock().expect("db poisoned");
+            // 事前チェック: 別 email が同じ handle (NOCASE) を持っていないか
+            let taken_by: Option<String> = conn
+                .query_row(
+                    "SELECT email FROM users WHERE handle = ?1 COLLATE NOCASE AND email != ?2",
+                    params![handle, email],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if taken_by.is_some() {
+                return Ok(UpsertResult::HandleTaken);
+            }
             conn.execute(
                 "INSERT INTO users (email, handle, created_at, last_seen)
                  VALUES (?1, ?2, ?3, ?3)
                  ON CONFLICT(email) DO UPDATE SET handle = excluded.handle, last_seen = excluded.last_seen",
                 params![email, handle, now],
             )?;
-            Ok(())
+            Ok(UpsertResult::Ok)
+        })
+        .await?
+    }
+
+    pub async fn list_users(&self) -> Result<Vec<User>> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<Vec<User>> {
+            let conn = conn.lock().expect("db poisoned");
+            let mut stmt = conn.prepare(
+                "SELECT email, handle, created_at, last_seen FROM users ORDER BY last_seen DESC",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(User {
+                        email: row.get(0)?,
+                        handle: row.get(1)?,
+                        created_at: row.get(2)?,
+                        last_seen: row.get(3)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
         })
         .await?
     }
@@ -239,18 +313,58 @@ mod tests {
     #[tokio::test]
     async fn upsert_user_inserts_then_updates_handle() {
         let db = fresh_db().await;
-        db.upsert_user("a@x.com", "alice", now()).await.unwrap();
+        let r1 = db.upsert_user("a@x.com", "alice", now()).await.unwrap();
+        assert_eq!(r1, UpsertResult::Ok);
         let u = db.get_user("a@x.com").await.unwrap().unwrap();
         assert_eq!(u.handle, "alice");
         assert_eq!(u.created_at, now());
 
-        db.upsert_user("a@x.com", "alice2", now() + 100)
+        let r2 = db
+            .upsert_user("a@x.com", "alice2", now() + 100)
             .await
             .unwrap();
+        assert_eq!(r2, UpsertResult::Ok);
         let u2 = db.get_user("a@x.com").await.unwrap().unwrap();
         assert_eq!(u2.handle, "alice2");
         assert_eq!(u2.created_at, now()); // 元の created_at は保持
         assert_eq!(u2.last_seen, now() + 100);
+    }
+
+    #[tokio::test]
+    async fn upsert_user_rejects_duplicate_handle_case_insensitive() {
+        let db = fresh_db().await;
+        db.upsert_user("a@x.com", "Alice", now()).await.unwrap();
+        let r = db
+            .upsert_user("b@x.com", "alice", now())
+            .await
+            .unwrap();
+        assert_eq!(r, UpsertResult::HandleTaken);
+        // a@x.com は影響なし
+        assert_eq!(db.get_user("a@x.com").await.unwrap().unwrap().handle, "Alice");
+        // b@x.com は登録されていない
+        assert!(db.get_user("b@x.com").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn upsert_user_allows_same_email_to_keep_their_handle() {
+        let db = fresh_db().await;
+        db.upsert_user("a@x.com", "Alice", now()).await.unwrap();
+        // 同じ email の更新は弾かれない(自分の handle)
+        let r = db.upsert_user("a@x.com", "Alice", now() + 1).await.unwrap();
+        assert_eq!(r, UpsertResult::Ok);
+    }
+
+    #[tokio::test]
+    async fn list_users_returns_all_ordered_by_last_seen_desc() {
+        let db = fresh_db().await;
+        db.upsert_user("a@x.com", "alice", 100).await.unwrap();
+        db.upsert_user("b@x.com", "bob", 200).await.unwrap();
+        db.upsert_user("c@x.com", "carol", 150).await.unwrap();
+        let users = db.list_users().await.unwrap();
+        assert_eq!(users.len(), 3);
+        assert_eq!(users[0].email, "b@x.com");
+        assert_eq!(users[1].email, "c@x.com");
+        assert_eq!(users[2].email, "a@x.com");
     }
 
     #[tokio::test]
