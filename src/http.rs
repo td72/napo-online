@@ -30,3 +30,30 @@ pub async fn me(
         sub: claims.sub,
     }))
 }
+
+#[derive(Serialize)]
+pub struct UserSummary {
+    pub email: String,
+    pub handle: String,
+    pub last_seen: i64,
+    pub created_at: i64,
+}
+
+/// 過去に一度でも接続したユーザの一覧。CF Access の招待リスト本体ではないことに注意
+/// (招待されたまま未ログインのメアドはここには出ない)。
+pub async fn list_users(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+) -> Result<Json<Vec<UserSummary>>, AppError> {
+    let users = state.db.list_users().await?;
+    let summaries = users
+        .into_iter()
+        .map(|u| UserSummary {
+            email: u.email,
+            handle: u.handle,
+            last_seen: u.last_seen,
+            created_at: u.created_at,
+        })
+        .collect();
+    Ok(Json(summaries))
+}

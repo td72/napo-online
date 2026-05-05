@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 
 use crate::AppState;
 use crate::auth::Claims;
+use crate::db::UpsertResult;
 use crate::hub::{CreateRoomError, JoinError, RoomHandle};
 use crate::now_unix;
 use crate::protocol::{ClientMessage, ServerMessage};
@@ -131,15 +132,38 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
     match msg {
         ClientMessage::Hello { display_name } => {
             tracing::info!(email = %session.claims.email, %display_name, "hello");
-            if let Err(e) = session
+            if display_name.trim().is_empty() {
+                let _ = send(
+                    socket,
+                    &error_msg("invalid_handle", "display_name must not be empty"),
+                )
+                .await;
+                return true;
+            }
+            match session
                 .state
                 .db
                 .upsert_user(&session.claims.email, &display_name, now_unix())
                 .await
             {
-                tracing::warn!(error = %e, "upsert_user failed");
+                Ok(UpsertResult::Ok) => {
+                    session.display_name = display_name;
+                }
+                Ok(UpsertResult::HandleTaken) => {
+                    let _ = send(
+                        socket,
+                        &error_msg(
+                            "handle_taken",
+                            &format!("handle '{display_name}' is already taken"),
+                        ),
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "upsert_user failed");
+                    let _ = send(socket, &error_msg("internal", "failed to update profile")).await;
+                }
             }
-            session.display_name = display_name;
             true
         }
         ClientMessage::Ping => send(socket, &ServerMessage::Pong).await.is_ok(),

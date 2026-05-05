@@ -92,6 +92,28 @@
         ローカル DEV_MODE では <code>dev_email</code> で別 identity を区別。</p>
     </div>
 
+    <div id="profile" class="panel hidden">
+      <h2>プロフィール</h2>
+      <p class="small">email: <span id="my_email">—</span></p>
+      <div class="row">
+        <span class="small">表示名:</span>
+        <input id="profile_handle" />
+        <button id="save_handle">変更</button>
+        <span id="handle_status" class="small"></span>
+      </div>
+    </div>
+
+    <div id="users_panel" class="panel hidden">
+      <div class="row">
+        <h2 style="margin: 0; flex: 1">登録ユーザ</h2>
+        <button id="refresh_users">↻ 更新</button>
+      </div>
+      <div id="users_list" class="small"></div>
+      <p class="small" style="color: #777">
+        ※ 招待リスト本体は Cloudflare Access dashboard に。ここは「一度でも接続したユーザ」だけ
+      </p>
+    </div>
+
     <div id="lobby" class="panel hidden">
       <h2>ロビー</h2>
       <div class="row">
@@ -170,11 +192,48 @@
           log("WebSocket 接続", "info");
           send({ type: "hello", payload: { display_name: myDisplayName } });
           $("login").classList.add("hidden");
+          $("profile").classList.remove("hidden");
+          $("users_panel").classList.remove("hidden");
           $("lobby").classList.remove("hidden");
+          fetchMe();
+          fetchUsers();
         };
         ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
         ws.onclose = () => log("WebSocket 切断", "err");
         ws.onerror = (e) => log("WebSocket エラー: " + e, "err");
+      }
+
+      async function fetchMe() {
+        try {
+          const r = await fetch("/api/me");
+          if (!r.ok) return;
+          const me = await r.json();
+          $("my_email").textContent = me.email;
+          $("profile_handle").value = me.handle || myDisplayName;
+        } catch (e) {
+          log("fetchMe failed: " + e, "err");
+        }
+      }
+
+      async function fetchUsers() {
+        try {
+          const r = await fetch("/api/users");
+          if (!r.ok) return;
+          const users = await r.json();
+          const ul = $("users_list");
+          ul.innerHTML = "";
+          for (const u of users) {
+            const div = document.createElement("div");
+            const t = new Date(u.last_seen * 1000).toLocaleString();
+            div.textContent = `${u.handle}  (${u.email})  最終: ${t}`;
+            ul.appendChild(div);
+          }
+          if (users.length === 0) {
+            ul.textContent = "(まだ誰もログインしていません)";
+          }
+        } catch (e) {
+          log("fetchUsers failed: " + e, "err");
+        }
       }
 
       function send(msg) {
@@ -491,6 +550,28 @@
       };
       $("abort_hand").onclick = () => send({ type: "abort_hand" });
       $("end_match").onclick = () => send({ type: "end_match" });
+
+      $("save_handle").onclick = () => {
+        const newName = $("profile_handle").value.trim();
+        if (!newName) {
+          $("handle_status").textContent = "✗ 表示名は空にできません";
+          $("handle_status").style.color = "#f88";
+          return;
+        }
+        $("handle_status").textContent = "保存中…";
+        $("handle_status").style.color = "#aaa";
+        send({ type: "hello", payload: { display_name: newName } });
+        // 楽観的更新: handle_taken エラーが来たら handleMessage 側で上書きされる
+        myDisplayName = newName;
+        setTimeout(() => {
+          if ($("handle_status").textContent === "保存中…") {
+            $("handle_status").textContent = "✓ 保存しました";
+            $("handle_status").style.color = "#9c9";
+            fetchUsers();
+          }
+        }, 200);
+      };
+      $("refresh_users").onclick = fetchUsers;
 
       // 30秒ごとに Ping
       setInterval(() => {
