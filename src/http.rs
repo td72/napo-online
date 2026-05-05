@@ -1,7 +1,7 @@
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::auth::Claims;
@@ -56,4 +56,79 @@ pub async fn list_users(
         })
         .collect();
     Ok(Json(summaries))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListGamesParams {
+    /// 取得件数。デフォルト 20、最大 100。
+    pub limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+pub struct GameSummaryResponse {
+    pub id: String,
+    pub room_id: String,
+    pub started_at: i64,
+    pub ended_at: i64,
+    pub napoleon: Option<PlayerRef>,
+    pub adjutant: Option<PlayerRef>,
+    pub bid_value: Option<i32>,
+    pub bid_suit: Option<String>,
+    pub napoleon_won: Option<bool>,
+    pub players: Vec<PlayerScore>,
+}
+
+#[derive(Serialize)]
+pub struct PlayerRef {
+    pub email: String,
+    pub handle: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PlayerScore {
+    pub seat: usize,
+    pub email: String,
+    pub handle: Option<String>,
+    pub score: Option<i32>,
+}
+
+/// 終局済みの局を新しい順に返す。`?limit=N`(デフォルト 20、最大 100)。
+pub async fn list_games(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+    Query(params): Query<ListGamesParams>,
+) -> Result<Json<Vec<GameSummaryResponse>>, AppError> {
+    let limit = params.limit.unwrap_or(20).min(100);
+    let games = state.db.list_recent_games(limit).await?;
+    let out = games
+        .into_iter()
+        .map(|g| GameSummaryResponse {
+            id: g.id,
+            room_id: g.room_id,
+            started_at: g.started_at,
+            ended_at: g.ended_at.unwrap_or(0),
+            napoleon: g.napoleon_email.map(|email| PlayerRef {
+                email,
+                handle: g.napoleon_handle,
+            }),
+            adjutant: g.adjutant_email.map(|email| PlayerRef {
+                email,
+                handle: g.adjutant_handle,
+            }),
+            bid_value: g.bid_value,
+            bid_suit: g.bid_suit,
+            napoleon_won: g.napoleon_won,
+            players: g
+                .players
+                .into_iter()
+                .map(|p| PlayerScore {
+                    seat: p.seat,
+                    email: p.email,
+                    handle: p.handle,
+                    score: p.score,
+                })
+                .collect(),
+        })
+        .collect();
+    Ok(Json(out))
 }

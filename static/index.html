@@ -24,6 +24,25 @@
         padding: 0.75rem 1rem;
         margin-bottom: 0.75rem;
       }
+      .game-row {
+        border-top: 1px solid #333;
+        padding: 0.4rem 0;
+      }
+      .game-row:first-child { border-top: none; }
+      .game-meta { color: #aaa; }
+      .win { color: #6c6; }
+      .lose { color: #c66; }
+      .seat-pill {
+        display: inline-block;
+        padding: 0 0.4rem;
+        margin-right: 0.3rem;
+        background: #333;
+        border-radius: 3px;
+      }
+      .seat-pill.declarer { background: #553; }
+      .seat-pill.adjutant { background: #535; }
+      .seat-pill .pos { color: #6c6; }
+      .seat-pill .neg { color: #c66; }
       input, select, button {
         font-size: 1rem;
         padding: 0.4rem 0.6rem;
@@ -114,6 +133,14 @@
       </p>
     </div>
 
+    <div id="games_panel" class="panel hidden">
+      <div class="row">
+        <h2 style="margin: 0; flex: 1">最近の対戦</h2>
+        <button id="refresh_games">↻ 更新</button>
+      </div>
+      <div id="games_list" class="small"></div>
+    </div>
+
     <div id="lobby" class="panel hidden">
       <h2>ロビー</h2>
       <div class="row">
@@ -194,9 +221,11 @@
           $("login").classList.add("hidden");
           $("profile").classList.remove("hidden");
           $("users_panel").classList.remove("hidden");
+          $("games_panel").classList.remove("hidden");
           $("lobby").classList.remove("hidden");
           fetchMe();
           fetchUsers();
+          fetchGames();
         };
         ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
         ws.onclose = () => log("WebSocket 切断", "err");
@@ -236,6 +265,71 @@
         }
       }
 
+      async function fetchGames() {
+        try {
+          const r = await fetch("/api/games?limit=20");
+          if (!r.ok) return;
+          const games = await r.json();
+          const list = $("games_list");
+          list.innerHTML = "";
+          if (games.length === 0) {
+            list.textContent = "(対戦履歴なし)";
+            return;
+          }
+          for (const g of games) {
+            list.appendChild(renderGameRow(g));
+          }
+        } catch (e) {
+          log("fetchGames failed: " + e, "err");
+        }
+      }
+
+      function renderGameRow(g) {
+        const div = document.createElement("div");
+        div.className = "game-row";
+        const t = new Date(g.ended_at * 1000).toLocaleString();
+        const napName = g.napoleon ? (g.napoleon.handle || g.napoleon.email) : "?";
+        const adjName = g.adjutant ? (g.adjutant.handle || g.adjutant.email) : "(なし/一人立ち)";
+        const trump = g.bid_suit ? (SUIT_GLYPH[g.bid_suit] || g.bid_suit) : "?";
+        const bidStr = `${g.bid_value || "?"}${trump}`;
+        const result = g.napoleon_won === null
+          ? ""
+          : g.napoleon_won
+            ? `<span class="win">ナポ勝ち</span>`
+            : `<span class="lose">ナポ負け</span>`;
+
+        const meta = document.createElement("div");
+        meta.className = "game-meta";
+        meta.innerHTML = `<span style="color: #ccc">${t}</span>  部屋 ${g.room_id}  ${result}`;
+        div.appendChild(meta);
+
+        const main = document.createElement("div");
+        main.innerHTML = `ナポ <b>${escapeHtml(napName)}</b> + 副官 <b>${escapeHtml(adjName)}</b>  宣言 <b>${bidStr}</b>`;
+        div.appendChild(main);
+
+        const seats = document.createElement("div");
+        seats.style.marginTop = "0.2rem";
+        for (const p of g.players) {
+          const pill = document.createElement("span");
+          pill.className = "seat-pill";
+          if (g.napoleon && p.email === g.napoleon.email) pill.classList.add("declarer");
+          if (g.adjutant && p.email === g.adjutant.email) pill.classList.add("adjutant");
+          const scoreClass = (p.score ?? 0) > 0 ? "pos" : (p.score ?? 0) < 0 ? "neg" : "";
+          pill.innerHTML = `${p.seat}: ${escapeHtml(p.handle || p.email)} <span class="${scoreClass}">${p.score >= 0 ? "+" : ""}${p.score}</span>`;
+          seats.appendChild(pill);
+        }
+        div.appendChild(seats);
+        return div;
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
       function send(msg) {
         ws.send(JSON.stringify(msg));
       }
@@ -269,6 +363,8 @@
             phase = "between_hands";
             $("next_hand").classList.remove("hidden");
             $("scores").textContent = `累積: ${JSON.stringify(m.payload.cumulative)}`;
+            // DB に永続化されたはずなので履歴を更新
+            fetchGames();
             break;
           case "next_hand_ready":
             log(`Next 投票: ${m.payload.ready_seats.join(",")}`);
@@ -572,6 +668,7 @@
         }, 200);
       };
       $("refresh_users").onclick = fetchUsers;
+      $("refresh_games").onclick = fetchGames;
 
       // 30秒ごとに Ping
       setInterval(() => {
