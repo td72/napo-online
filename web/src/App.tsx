@@ -1,7 +1,9 @@
-// Phase B-3 検証用 UI。store + WS が動くことを画面で確認するだけ。
+// Phase B-3 / C 検証用 UI。store + WS の動作 + Card / Player ギャラリーを表示。
 // 本物のゲーム画面は Phase D で差し替え。
 
 import { useState } from "react";
+import { TrumpCard } from "./components/Card";
+import { Avatar, PlayerBadge } from "./components/Player";
 import { useStore } from "./lib/store";
 
 function App() {
@@ -142,7 +144,73 @@ function App() {
           </ul>
         </section>
       )}
+
+      <ComponentGallery />
     </div>
+  );
+}
+
+/** Phase C で移植した Card / Player を視覚チェックするためのギャラリー。
+ * Phase D 開始時に削除予定。 */
+function ComponentGallery() {
+  return (
+    <>
+      <section style={panelStyle}>
+        <h2 style={h2Style}>Cards (gallery)</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", paddingTop: 14 }}>
+          <TrumpCard code="SA" label="マイティ" highlight="mighty" />
+          <TrumpCard code="HQ" label="よろめき" highlight="partner" />
+          <TrumpCard code="SJ" label="正J" highlight="jack" />
+          <TrumpCard code="DK" />
+          <TrumpCard code="C10" />
+          <TrumpCard code="H7" />
+          <TrumpCard code="D2" />
+          <TrumpCard code="JK" />
+          <TrumpCard code="SA" faceDown />
+          <TrumpCard code="SA" selected />
+          <TrumpCard code="SA" dimmed />
+        </div>
+      </section>
+
+      <section style={panelStyle}>
+        <h2 style={h2Style}>Players (gallery)</h2>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <Avatar name="ハル" size={40} active />
+          <Avatar name="ナギ" size={40} team="napo" />
+          <Avatar name="リオ" size={40} team="army" />
+          <Avatar name="ミナト" size={40} />
+          <Avatar name="aoi" size={40} />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            flexWrap: "wrap",
+            marginTop: 16,
+            paddingTop: 14,
+          }}
+        >
+          <PlayerBadge name="ハル" status="thinking" count={7} active />
+          <PlayerBadge name="ナギ" status="played" count={6} team="napo" isNapo bid="13♠" />
+          <PlayerBadge name="リオ" status="pass" count={7} team="army" />
+          <PlayerBadge name="ミナト" count={5} team="napo" isPartner />
+          <PlayerBadge name="アオイ" status="waiting" count={7} total={-3} />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            flexWrap: "wrap",
+            marginTop: 16,
+            paddingTop: 14,
+            borderTop: "1px dashed var(--border-color)",
+          }}
+        >
+          <PlayerBadge name="ハル" compact horizontal active total={5} bid="13♠" isNapo />
+          <PlayerBadge name="ナギ" compact horizontal align="right" total={-2} count={6} />
+        </div>
+      </section>
+    </>
   );
 }
 
