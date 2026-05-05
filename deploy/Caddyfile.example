@@ -1,0 +1,43 @@
+# /etc/caddy/Caddyfile
+#
+# - Cloudflare proxied (Universal SSL) → Caddy(HTTPS) → napo-online(HTTP 8080)
+# - Caddy が Let's Encrypt 経由で origin 証明書を自動取得する
+# - WebSocket は reverse_proxy が自動でアップグレードを通す
+#
+# 使用前に napo.<your-domain> を実環境のドメインに置換すること。
+
+{
+    # 必要なら admin off でローカル管理 API を閉じる
+    # admin off
+    email you@example.com
+}
+
+napo.<your-domain> {
+    encode zstd gzip
+
+    reverse_proxy 127.0.0.1:8080 {
+        # WebSocket は Caddy 0.14+ で reverse_proxy がデフォルト対応
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # アクセスログ(JSON)
+    log {
+        output file /var/log/caddy/napo.access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format json
+    }
+
+    # 静的アセットは napo-online 側で /static/ 配信(Phase 5 で組み込み)。
+    # 別途 Caddy で配信したい場合は file_server で /opt/napo/static を露出。
+
+    # セキュリティヘッダ最低限
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # CF Access が Cookie を扱うので CSP は最小限
+    }
+}
