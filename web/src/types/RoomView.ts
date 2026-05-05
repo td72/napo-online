@@ -2,4 +2,9 @@
 import type { PlayerView } from "./PlayerView";
 import type { RoomPhase } from "./RoomPhase";
 
-export type RoomView = { room_id: string, host: string, players: Array<PlayerView>, state: RoomPhase, };
+export type RoomView = {
+  room_id: string;
+  host: string;
+  players: Array<PlayerView>;
+  state: RoomPhase;
+};
