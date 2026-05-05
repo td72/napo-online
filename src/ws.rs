@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use axum::Extension;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -56,6 +58,7 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
         return;
     }
 
+    let t1 = session_state_t1(&state);
     let mut session = Session {
         claims,
         state,
@@ -63,8 +66,13 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
         display_name: existing_handle.unwrap_or_else(|| DEFAULT_DISPLAY_NAME.to_string()),
         current_room: None,
     };
+    let mut last_activity = Instant::now();
 
     loop {
+        let now = Instant::now();
+        let deadline = last_activity + t1;
+        let until = deadline.saturating_duration_since(now);
+
         tokio::select! {
             biased;
             Some(out) = msg_rx.recv() => {
@@ -72,6 +80,7 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
             }
             frame = socket.recv() => {
                 let Some(Ok(frame)) = frame else { break };
+                last_activity = Instant::now();
                 let keep = match frame {
                     Message::Text(text) => handle_text(&mut socket, &mut session, text.as_ref()).await,
                     Message::Binary(_) => {
@@ -86,6 +95,15 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
                     Message::Ping(_) | Message::Pong(_) => true,
                 };
                 if !keep { break; }
+            }
+            _ = tokio::time::sleep(until) => {
+                tracing::warn!(
+                    email = %session.claims.email,
+                    idle_secs = (Instant::now() - last_activity).as_secs(),
+                    "ws idle timeout (T1) — closing"
+                );
+                let _ = socket.send(Message::Close(None)).await;
+                break;
             }
         }
     }
@@ -271,4 +289,8 @@ fn error_msg(code: &str, message: &str) -> ServerMessage {
         code: code.into(),
         message: message.into(),
     }
+}
+
+fn session_state_t1(state: &AppState) -> std::time::Duration {
+    state.cfg.t1_detect
 }
