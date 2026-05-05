@@ -124,10 +124,13 @@
 
     <div id="users_panel" class="panel hidden">
       <div class="row">
-        <h2 style="margin: 0; flex: 1">登録ユーザ</h2>
+        <h2 style="margin: 0; flex: 1">登録ユーザ <span id="users_count" class="small"></span></h2>
         <button id="refresh_users">↻ 更新</button>
       </div>
       <div id="users_list" class="small"></div>
+      <div class="row">
+        <button id="more_users" class="hidden">もっと見る</button>
+      </div>
       <p class="small" style="color: #777">
         ※ 招待リスト本体は Cloudflare Access dashboard に。ここは「一度でも接続したユーザ」だけ
       </p>
@@ -135,10 +138,13 @@
 
     <div id="games_panel" class="panel hidden">
       <div class="row">
-        <h2 style="margin: 0; flex: 1">最近の対戦</h2>
+        <h2 style="margin: 0; flex: 1">最近の対戦 <span id="games_count" class="small"></span></h2>
         <button id="refresh_games">↻ 更新</button>
       </div>
       <div id="games_list" class="small"></div>
+      <div class="row">
+        <button id="more_games" class="hidden">もっと見る</button>
+      </div>
     </div>
 
     <div id="lobby" class="panel hidden">
@@ -244,41 +250,52 @@
         }
       }
 
-      async function fetchUsers() {
+      const PAGE_SIZE = 10;
+      let usersOffset = 0;
+      let gamesOffset = 0;
+
+      async function fetchUsers(append = false) {
         try {
-          const r = await fetch("/api/users");
+          if (!append) usersOffset = 0;
+          const r = await fetch(`/api/users?limit=${PAGE_SIZE}&offset=${usersOffset}`);
           if (!r.ok) return;
-          const users = await r.json();
+          const data = await r.json();
           const ul = $("users_list");
-          ul.innerHTML = "";
-          for (const u of users) {
+          if (!append) ul.innerHTML = "";
+          for (const u of data.items) {
             const div = document.createElement("div");
             const t = new Date(u.last_seen * 1000).toLocaleString();
             div.textContent = `${u.handle}  (${u.email})  最終: ${t}`;
             ul.appendChild(div);
           }
-          if (users.length === 0) {
+          if (!append && data.items.length === 0) {
             ul.textContent = "(まだ誰もログインしていません)";
           }
+          usersOffset += data.items.length;
+          $("more_users").classList.toggle("hidden", !data.has_more);
+          $("users_count").textContent = `${usersOffset} / ${data.total}`;
         } catch (e) {
           log("fetchUsers failed: " + e, "err");
         }
       }
 
-      async function fetchGames() {
+      async function fetchGames(append = false) {
         try {
-          const r = await fetch("/api/games?limit=20");
+          if (!append) gamesOffset = 0;
+          const r = await fetch(`/api/games?limit=${PAGE_SIZE}&offset=${gamesOffset}`);
           if (!r.ok) return;
-          const games = await r.json();
+          const data = await r.json();
           const list = $("games_list");
-          list.innerHTML = "";
-          if (games.length === 0) {
-            list.textContent = "(対戦履歴なし)";
-            return;
-          }
-          for (const g of games) {
+          if (!append) list.innerHTML = "";
+          for (const g of data.items) {
             list.appendChild(renderGameRow(g));
           }
+          if (!append && data.items.length === 0) {
+            list.textContent = "(対戦履歴なし)";
+          }
+          gamesOffset += data.items.length;
+          $("more_games").classList.toggle("hidden", !data.has_more);
+          $("games_count").textContent = `${gamesOffset} / ${data.total}`;
         } catch (e) {
           log("fetchGames failed: " + e, "err");
         }
@@ -667,8 +684,10 @@
           }
         }, 200);
       };
-      $("refresh_users").onclick = fetchUsers;
-      $("refresh_games").onclick = fetchGames;
+      $("refresh_users").onclick = () => fetchUsers(false);
+      $("refresh_games").onclick = () => fetchGames(false);
+      $("more_users").onclick = () => fetchUsers(true);
+      $("more_games").onclick = () => fetchGames(true);
 
       // 30秒ごとに Ping
       setInterval(() => {
