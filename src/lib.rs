@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod config;
+pub mod db;
 pub mod error;
 pub mod game_adapter;
 pub mod http;
@@ -12,6 +13,7 @@ use std::sync::Arc;
 
 use crate::auth::Verifier;
 use crate::config::Config;
+use crate::db::Db;
 use crate::hub::Hub;
 
 #[derive(Clone)]
@@ -19,4 +21,5 @@ pub struct AppState {
     pub cfg: Arc<Config>,
     pub verifier: Option<Arc<Verifier>>,
     pub hub: Hub,
+    pub db: Db,
 }
