@@ -134,8 +134,12 @@ impl GameSession {
 
     /// 終局済みの hand について DB 書き込みに必要な情報を集約。
     /// `current_hand` が `Phase::Finished` でなければ `None`。
+    /// `Game::was_abandoned()` で強制終了された場合も `None`(DB に偽データを残さないため)。
     pub fn finished_hand_summary(&self) -> Option<FinishedHandSummary> {
         let game = self.session.current_hand();
+        if game.was_abandoned() {
+            return None;
+        }
         let phase = game.phase();
         let scores = game.scores()?;
         let (declarer, bid, _adjutant_card, adjutant_player) = match phase {
@@ -237,6 +241,15 @@ impl GameSession {
             hand_scores,
             cumulative_scores: self.cumulative_scores(),
         })
+    }
+
+    /// 進行中の局を強制終了する(napo-core 0.1.1+)。終了後は `start_next_hand` で次へ進める。
+    /// Phase::Finished に遷移し scores は全 0、`session.match_session().current_hand().was_abandoned()`
+    /// が true になる。
+    pub fn abandon_current_hand(&mut self) -> Result<(), AdapterError> {
+        self.session.abandon_current_hand()?;
+        self.last_phase = self.session.current_hand().phase().clone();
+        Ok(())
     }
 
     pub fn start_next_hand(&mut self) -> Result<ApplyOutcome, AdapterError> {

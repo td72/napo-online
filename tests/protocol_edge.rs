@@ -9,7 +9,7 @@ use futures_util::{SinkExt, StreamExt, stream::SplitSink, stream::SplitStream};
 use napo_online::config::Config;
 use napo_online::db::Db;
 use napo_online::hub::Hub;
-use napo_online::protocol::{ClientMessage, RoomId, SeatAssignment, ServerMessage};
+use napo_online::protocol::{ClientMessage, PublicEvent, RoomId, SeatAssignment, ServerMessage};
 use napo_online::room::RoomTimers;
 use napo_online::{AppState, build_router};
 use tokio::net::TcpStream;
@@ -259,8 +259,8 @@ async fn end_match_rejected_when_nobody_disconnected() {
 }
 
 #[tokio::test]
-async fn abort_hand_after_t3_ends_match() {
-    // Config::for_test の t3_abort = 200ms
+async fn abort_hand_after_t3_emits_aborted_and_advances_to_between_hands() {
+    // Config::for_test の hands_per_match = 2、t3_abort = 200ms
     let port = spawn_server(Config::for_test()).await;
     let (mut clients, _) = five_connected_in_room(port).await;
     let seats = start_match_and_collect(&mut clients).await;
@@ -271,7 +271,7 @@ async fn abort_hand_after_t3_ends_match() {
         .enumerate()
         .map(|(i, n)| (format!("{n}@local"), i))
         .collect();
-    let bob_seat = seats
+    let _bob_seat = seats
         .iter()
         .find(|s| player_to_idx[&s.player_id] == 1)
         .unwrap()
@@ -280,23 +280,67 @@ async fn abort_hand_after_t3_ends_match() {
     drop(bob_w);
     drop(bob_r);
 
-    // T3 (200ms) を超える待機 + Tick 1s
+    // T3 (200ms) + Tick 1s
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
-    // host (alice = clients[0]) が AbortHand → MatchEnded がブロードキャスト
+    // host (alice = clients[0]) AbortHand
     send(&mut clients[0].0, &ClientMessage::AbortHand).await;
+
+    // PublicEvent::HandAborted がブロードキャスト
+    let _ = wait_for(&mut clients[0].1, |m| {
+        matches!(
+            m,
+            ServerMessage::Event {
+                event: PublicEvent::HandAborted
+            }
+        )
+    })
+    .await;
+    // HandEnded(scores 全0, cumulative 全0)
+    let ended = wait_for(&mut clients[0].1, |m| {
+        matches!(m, ServerMessage::HandEnded { .. })
+    })
+    .await;
+    if let ServerMessage::HandEnded { scores, cumulative } = ended {
+        assert!(scores.iter().all(|&s| s == 0), "scores={scores:?}");
+        assert!(
+            cumulative.iter().all(|&s| s == 0),
+            "cumulative={cumulative:?}"
+        );
+    }
+    // hands_per_match=2 なので MatchEnded ではなく BetweenHands に遷移しているはず
+
+    for (mut w, _) in clients {
+        let _ = w.send(Message::Close(None)).await;
+    }
+}
+
+#[tokio::test]
+async fn abort_hand_on_last_hand_ends_match() {
+    // hands_per_match = 1 にして、初局を abort = MatchEnded
+    let mut cfg = Config::for_test();
+    cfg.hands_per_match = 1;
+    let port = spawn_server(cfg).await;
+
+    let (mut clients, _) = five_connected_in_room(port).await;
+    let _seats = start_match_and_collect(&mut clients).await;
+
+    // bob 切断 → T3 経過
+    let (bob_w, bob_r) = clients.remove(1);
+    drop(bob_w);
+    drop(bob_r);
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    send(&mut clients[0].0, &ClientMessage::AbortHand).await;
+
     let m = wait_for(&mut clients[0].1, |m| {
         matches!(m, ServerMessage::MatchEnded { .. })
     })
     .await;
     if let ServerMessage::MatchEnded { final_scores } = m {
         assert_eq!(final_scores.len(), 5);
-        // 1局も完走してないので全員 0 のはず
-        assert!(final_scores.iter().all(|&s| s == 0), "scores={final_scores:?}");
-    } else {
-        panic!("expected MatchEnded");
+        assert!(final_scores.iter().all(|&s| s == 0));
     }
-    let _ = bob_seat; // unused but verified above
 
     for (mut w, _) in clients {
         let _ = w.send(Message::Close(None)).await;

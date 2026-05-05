@@ -12,7 +12,8 @@ use crate::db::{Db, GameOutcome, GameRecord};
 use crate::game_adapter::{ApplyOutcome, FinishedHandSummary, GameSession};
 use crate::now_unix;
 use crate::protocol::{
-    PlayerId, PlayerView, RoomId, RoomPhase as WireRoomPhase, RoomView, ServerMessage, WireAction,
+    PlayerId, PlayerView, PublicEvent, RoomId, RoomPhase as WireRoomPhase, RoomView,
+    ServerMessage, WireAction,
 };
 
 /// 永続化用のスナップショット。`napo_core::Match` を直接埋め込む(serde feature 必須)。
@@ -612,9 +613,54 @@ impl Room {
             .await;
             return;
         }
-        // napo-core は途中の hand を「捨てる」操作を持たない。
-        // V1 では「セット全体を終了」として扱う(EndMatch と同等。次の Match を別部屋で開始する)。
-        self.end_match("aborted_by_host").await;
+        let Some(session) = self.session.as_mut() else {
+            self.send_to(&by, error("wrong_phase", "no session to abort")).await;
+            return;
+        };
+        if let Err(e) = session.abandon_current_hand() {
+            self.send_to(&by, error("invalid_state", &e.to_string())).await;
+            return;
+        }
+        let hand_scores: Vec<i32> = session
+            .match_session()
+            .current_hand()
+            .scores()
+            .unwrap()
+            .to_vec();
+        let cumulative_before = session.cumulative_scores();
+        let cumulative: Vec<i32> = cumulative_before
+            .iter()
+            .zip(hand_scores.iter())
+            .map(|(a, b)| a + b)
+            .collect();
+        let next_index = session.match_session().hand_count() as u32 + 1;
+        let match_finished = next_index >= self.hands_per_match;
+        tracing::info!(room = %self.id, ?hand_scores, "hand aborted by host");
+
+        self.broadcast(ServerMessage::Event {
+            event: PublicEvent::HandAborted,
+        })
+        .await;
+        self.broadcast(ServerMessage::HandEnded {
+            scores: hand_scores,
+            cumulative: cumulative.clone(),
+        })
+        .await;
+
+        if match_finished {
+            self.phase = LocalPhase::Ended;
+            self.broadcast(ServerMessage::MatchEnded {
+                final_scores: cumulative,
+            })
+            .await;
+            self.broadcast_room_state().await;
+            self.unpersist().await;
+        } else {
+            self.phase = LocalPhase::BetweenHands;
+            self.next_ready.clear();
+            self.broadcast_room_state().await;
+            self.persist().await;
+        }
     }
 
     async fn on_end_match(&mut self, by: PlayerId) {
