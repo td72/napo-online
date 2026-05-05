@@ -37,7 +37,12 @@ async fn main() -> Result<()> {
         "starting napo-online"
     );
 
-    let app = build_router(state);
+    let mut app = build_router(state);
+    if let Some(static_dir) = cfg.static_dir.as_deref() {
+        use tower_http::services::ServeDir;
+        tracing::info!(static_dir = %static_dir, "serving static files");
+        app = app.fallback_service(ServeDir::new(static_dir));
+    }
     let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
     axum::serve(listener, app).await?;
     Ok(())
