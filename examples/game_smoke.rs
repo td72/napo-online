@@ -63,15 +63,15 @@ async fn main() {
     println!("alice created room {room_id}");
 
     // bob..eve: join the same room
-    for idx in 1..5 {
+    for (w, r) in clients.iter_mut().take(5).skip(1) {
         send_json(
-            &mut clients[idx].0,
+            w,
             &ClientMessage::JoinRoom {
                 room_id: room_id.clone(),
             },
         )
         .await;
-        let _ = recv_one(&mut clients[idx].1).await; // room_state
+        let _ = recv_one(r).await; // room_state
     }
 
     // alice: start match
@@ -87,11 +87,10 @@ async fn main() {
             match_seed: seed,
             ..
         } = started
+            && i == 0
         {
-            if i == 0 {
-                match_seed = Some(seed);
-                seats = s;
-            }
+            match_seed = Some(seed);
+            seats = s;
         }
     }
     let seed = match_seed.expect("match_seed missing");
@@ -242,12 +241,11 @@ async fn wait_for(r: &mut Reader, pred: impl Fn(&ServerMessage) -> bool) -> Serv
             .expect("wait_for timeout")
             .expect("ws closed")
             .expect("ws err");
-        if let Message::Text(t) = frame {
-            if let Ok(m) = serde_json::from_str::<ServerMessage>(t.as_ref())
-                && pred(&m)
-            {
-                return m;
-            }
+        if let Message::Text(t) = frame
+            && let Ok(m) = serde_json::from_str::<ServerMessage>(t.as_ref())
+            && pred(&m)
+        {
+            return m;
         }
     }
 }

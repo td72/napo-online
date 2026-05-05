@@ -14,8 +14,8 @@ use napo_core::trick::PlayedCard;
 use napo_core::{Action, Bid, Card, Match, Observation, Phase, Rules, Trump};
 
 use crate::protocol::{
-    PlayerId, PublicEvent, SeatAssignment, WireAction, WireBid, WireBidEntry,
-    WireCompletedTrick, WireCurrentBid, WireObservation, WirePlayedCard, WireTrump,
+    PlayerId, PublicEvent, SeatAssignment, WireAction, WireBid, WireBidEntry, WireCompletedTrick,
+    WireCurrentBid, WireObservation, WirePlayedCard, WireTrump,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -162,7 +162,10 @@ impl GameSession {
         player: &PlayerId,
         wire: WireAction,
     ) -> Result<ApplyOutcome, AdapterError> {
-        let seat = *self.player_to_seat.get(player).ok_or(AdapterError::NotInGame)?;
+        let seat = *self
+            .player_to_seat
+            .get(player)
+            .ok_or(AdapterError::NotInGame)?;
         let current = self.session.current_hand().current_player();
         if current != Some(seat) {
             return Err(AdapterError::NotYourTurn { current });
@@ -314,10 +317,8 @@ impl GameSession {
         }
 
         // 配り直し: 「Pass が累積していた Bidding」→「Pass が全部 false に戻った Bidding」
-        if let (
-            Phase::Bidding { passed: pb, .. },
-            Phase::Bidding { passed: pa, .. },
-        ) = (before, after)
+        if let (Phase::Bidding { passed: pb, .. }, Phase::Bidding { passed: pa, .. }) =
+            (before, after)
             && pb.iter().any(|p| *p)
             && pa.iter().all(|p| !*p)
         {
@@ -513,9 +514,7 @@ mod tests {
 
     #[test]
     fn wire_action_invalid_card_errors() {
-        let w = WireAction::PlayCard {
-            card: "X9".into(),
-        };
+        let w = WireAction::PlayCard { card: "X9".into() };
         assert!(matches!(
             wire_action_to_core(&w),
             Err(AdapterError::InvalidCard(_))
@@ -555,7 +554,10 @@ mod tests {
                 trump: WireTrump::S,
             },
         );
-        assert!(matches!(r, Err(AdapterError::NotYourTurn { current: Some(0) })));
+        assert!(matches!(
+            r,
+            Err(AdapterError::NotYourTurn { current: Some(0) })
+        ));
     }
 
     #[test]

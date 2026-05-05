@@ -149,7 +149,10 @@ impl Room {
         if self.members.is_empty() {
             return true;
         }
-        let all_suspended = self.members.values().all(|m| m.conn == ConnState::Suspended);
+        let all_suspended = self
+            .members
+            .values()
+            .all(|m| m.conn == ConnState::Suspended);
         if !all_suspended {
             return false;
         }
@@ -255,10 +258,7 @@ impl Room {
     async fn on_disconnect(&mut self, player: PlayerId) {
         // 進行中(Playing/BetweenHands)で seated なら席を残して Suspended、
         // それ以外(Lobby/Ended)は普通に退室扱い
-        let in_session = matches!(
-            self.phase,
-            LocalPhase::Playing | LocalPhase::BetweenHands
-        );
+        let in_session = matches!(self.phase, LocalPhase::Playing | LocalPhase::BetweenHands);
         let is_seated = self
             .session
             .as_ref()
@@ -388,7 +388,9 @@ impl Room {
                 .await;
             return;
         }
-        let Some(session) = self.session.as_mut() else { return };
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
         match session.apply(&player, action) {
             Ok(outcome) => self.dispatch_outcome(outcome).await,
             Err(e) => {
@@ -410,10 +412,8 @@ impl Room {
         self.next_ready.insert(seat);
         let mut ready: Vec<usize> = self.next_ready.iter().copied().collect();
         ready.sort_unstable();
-        self.broadcast(ServerMessage::NextHandReady {
-            ready_seats: ready,
-        })
-        .await;
+        self.broadcast(ServerMessage::NextHandReady { ready_seats: ready })
+            .await;
 
         if self.next_ready.len() < self.max_players {
             return;
@@ -493,7 +493,8 @@ impl Room {
             .unwrap_or_default();
         tracing::info!(room = %self.id, %reason, ?final_scores, "match ended early");
         self.phase = LocalPhase::Ended;
-        self.broadcast(ServerMessage::MatchEnded { final_scores }).await;
+        self.broadcast(ServerMessage::MatchEnded { final_scores })
+            .await;
         self.broadcast_room_state().await;
     }
 
@@ -513,7 +514,11 @@ impl Room {
         }
         if outcome.hand_finished {
             // DB 永続化: 局のサマリを games / game_players に書く
-            if let Some(summary) = self.session.as_ref().and_then(|s| s.finished_hand_summary()) {
+            if let Some(summary) = self
+                .session
+                .as_ref()
+                .and_then(|s| s.finished_hand_summary())
+            {
                 self.persist_finished_hand(&summary).await;
             }
 

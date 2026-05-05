@@ -86,15 +86,15 @@ async fn five_clients_complete_one_hand() {
     let room_id = wait_for_room_id(&mut clients[0].1).await;
 
     // bob..eve join
-    for idx in 1..5 {
+    for (w, r) in clients.iter_mut().take(5).skip(1) {
         send(
-            &mut clients[idx].0,
+            w,
             &ClientMessage::JoinRoom {
                 room_id: room_id.clone(),
             },
         )
         .await;
-        let _ = recv(&mut clients[idx].1).await; // room_state
+        let _ = recv(r).await; // room_state
     }
 
     // start match

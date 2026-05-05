@@ -95,8 +95,7 @@ impl Db {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {
             let conn = conn.lock().expect("db poisoned");
-            conn.execute_batch(SCHEMA_V1)
-                .context("apply schema v1")
+            conn.execute_batch(SCHEMA_V1).context("apply schema v1")
         })
         .await?
     }
@@ -155,7 +154,11 @@ impl Db {
         .await?
     }
 
-    pub async fn record_game_start(&self, g: GameRecord, players: Vec<(String, usize)>) -> Result<()> {
+    pub async fn record_game_start(
+        &self,
+        g: GameRecord,
+        players: Vec<(String, usize)>,
+    ) -> Result<()> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {
             let mut conn = conn.lock().expect("db poisoned");

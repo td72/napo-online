@@ -25,7 +25,11 @@ const URL: &str = "ws://127.0.0.1:8080/ws";
 async fn main() {
     println!("--- A connects, says Hello, creates room ---");
     let mut a = connect("alice").await;
-    send_json(&mut a, r#"{"type":"hello","payload":{"display_name":"alice"}}"#).await;
+    send_json(
+        &mut a,
+        r#"{"type":"hello","payload":{"display_name":"alice"}}"#,
+    )
+    .await;
     send_json(&mut a, r#"{"type":"create_room"}"#).await;
     drain(&mut a, "A", Duration::from_millis(300)).await;
 
@@ -34,7 +38,11 @@ async fn main() {
     // smoke テストでは print から目視で拾うか、room_id を最初の出力から手動で取る。
     // ここでは pings/pong だけ確認する。
     let mut b = connect("bob").await;
-    send_json(&mut b, r#"{"type":"hello","payload":{"display_name":"bob"}}"#).await;
+    send_json(
+        &mut b,
+        r#"{"type":"hello","payload":{"display_name":"bob"}}"#,
+    )
+    .await;
     send_json(&mut b, r#"{"type":"ping"}"#).await;
     drain(&mut b, "B", Duration::from_millis(300)).await;
 
@@ -46,7 +54,9 @@ async fn main() {
     println!("done");
 }
 
-async fn connect(label: &str) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+async fn connect(
+    label: &str,
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
     let req = URL.into_client_request().expect("request");
     let (ws, _) = connect_async(req)
         .await
@@ -62,11 +72,8 @@ where
     ws.send(Message::Text(json.into())).await.expect("send");
 }
 
-async fn drain<S>(
-    ws: &mut tokio_tungstenite::WebSocketStream<S>,
-    label: &str,
-    for_ms: Duration,
-) where
+async fn drain<S>(ws: &mut tokio_tungstenite::WebSocketStream<S>, label: &str, for_ms: Duration)
+where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let deadline = tokio::time::Instant::now() + for_ms;
