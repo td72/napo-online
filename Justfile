@@ -15,6 +15,24 @@ target := "x86_64-unknown-linux-musl"
 default:
     @just --list
 
+# === Web (Vite+ + React) ===
+
+# 開発サーバ(localhost:5173、/api と /ws を Rust:8080 へ proxy)
+web-dev:
+    cd web && vp dev
+
+# プロダクションビルド → ../static/dist
+web-build:
+    cd web && vp build
+
+# Rust の protocol.rs から TS 型を web/src/types/ に再生成
+web-types:
+    cargo test --lib export_bindings
+
+# fmt + lint + type-check
+web-check:
+    cd web && vp check
+
 # ローカル開発: DEV_MODE で起動(ローカル DB は ./napo.db)
 dev:
     NAPO_DEV_MODE=true NAPO_DB=./napo.db cargo run

@@ -24,6 +24,7 @@ tower = "0.5.3"
 tower-http = { version = "0.6.8", features = ["trace", "compression-zstd", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+ts-rs = "12.0.1"
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 
 [dev-dependencies]
