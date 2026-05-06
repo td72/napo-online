@@ -35,7 +35,7 @@ sudo cp Caddyfile.example /etc/caddy/Caddyfile
 sudo $EDITOR /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 
-# バイナリは別途 `just deploy`(ローカル側、§13.2)で送り込む
+# バイナリ + web bundle はローカル側から `mise run deploy` で送り込む
 ```
 
 ## 動作確認
@@ -67,7 +67,7 @@ GCC を source からビルドするので 30分〜1時間かかる。Docker が
 ### ビルド
 
 ```bash
-just build-release
+mise run build:release
 # → target/x86_64-unknown-linux-musl/release/napo-online (約 13MB, static-pie ELF)
 ```
 
@@ -77,21 +77,24 @@ just build-release
 ### デプロイ
 
 ```bash
-HOST=ubuntu@napo.example.com PORT=22 just deploy
+HOST=ubuntu@napo.example.com PORT=22 mise run deploy
 ```
 
 `deploy` は次を一気に実行する:
 
-1. `deploy-web`: `mise run web:build` → `static/dist/` を rsync で `/opt/napo/dist/` に同期
-2. `build-release`: musl static-pie バイナリを cross build
+1. `deploy:web`: `web:build` → `static/dist/` を rsync で `/opt/napo/dist/` に同期
+2. `build:release`: musl static-pie バイナリを cross build
 3. バイナリを scp → `/opt/napo/napo-online.new` に install → `.prev` に旧バイナリ退避 → `systemctl restart napo`
 
 `NAPO_STATIC=/opt/napo/dist` が `napo.env` で設定されていれば、Rust 側が
 React bundle (`/opt/napo/dist/index.html`) を fallback で配信する。
 
-- `just deploy-web` … web bundle のみ転送(バイナリは更新しない)
-- `just deploy-bin` … バイナリのみ転送(web 変更なし時)
-- `just rollback` … `.prev` に戻す(バイナリのみ。web は別途巻き戻し)
+- `mise run deploy:web` … web bundle のみ転送(バイナリは更新しない)
+- `mise run deploy:bin` … バイナリのみ転送(web 変更なし時)
+- `mise run deploy:rollback` … `.prev` に戻す(バイナリのみ。web は別途巻き戻し)
+- `mise run logs` … journalctl を tail
+- `mise run health` … `/healthz` 疎通確認(`URL=https://...` で上書き可)
+- `mise run db:pull` … 本番 game.db をローカルへ scp
 
 ## バックアップ
 

@@ -2,25 +2,17 @@
 rust = "stable"
 prek = "latest"
 node = "lts"
-# vp(global CLI)は curl install:
+# vp(Vite+ global CLI)は curl install:
 #   curl -fsSL https://vite.plus | bash
-# vite-plus(per-project ライブラリ)は web/devDeps、vp create/migrate が自動で入れる。
+# ~/.vite-plus/bin/vp に入る。mise 管理外なので PATH を通す。
+# vite-plus(per-project ライブラリ)は web/devDeps で、`vp create`/`vp install` が入れる。
 
-# vp は ~/.vite-plus/bin/vp に入る(mise 管理外)。web 系 task は PATH に追加。
 [env]
 _.path = ["~/.vite-plus/bin"]
 
-[tasks.dev]
-description = "Run server with DEV_MODE (no CF Access). 別途 `mise run web:dev` で Vite dev も起動する想定"
-run = "NAPO_DEV_MODE=true NAPO_DB=./napo.db cargo run"
-
-[tasks."dev:integrated"]
-description = "Web を build → Rust 側に NAPO_STATIC=./static/dist で配信させる(本番に近い形でローカル確認)"
-run = ["mise run web:build", "NAPO_DEV_MODE=true NAPO_DB=./napo.db NAPO_STATIC=./static/dist cargo run"]
-
-[tasks.test]
-description = "Run all tests (lib + integration + examples)"
-run = "cargo test --all-targets --no-fail-fast"
+# ------------------------------------------------------------------------------
+# Format / lint / test / CI
+# ------------------------------------------------------------------------------
 
 [tasks.fmt]
 description = "Format Rust sources"
@@ -34,22 +26,41 @@ run = "cargo fmt --all -- --check"
 description = "Run clippy with -D warnings on all targets"
 run = "cargo clippy --all-targets -- -D warnings"
 
+[tasks.test]
+description = "Run Rust tests (lib + integration + examples)"
+run = "cargo test --all-targets --no-fail-fast"
+
 [tasks.doc]
 description = "Build API documentation (no deps)"
 run = "cargo doc --no-deps"
 
 [tasks.ci]
-description = "Run the same checks as GitHub Actions CI"
+description = "GitHub Actions CI と同じ一式(Rust + web)"
 depends = ["fmt:check", "clippy", "test", "web:check"]
 
 [tasks.hooks]
-description = "Install prek hooks (commit + pre-push)"
+description = "prek hooks (commit + pre-push) を install"
 run = ["prek install", "prek install --hook-type pre-push"]
 
-# === Web (Vite+ + React) ===
+# ------------------------------------------------------------------------------
+# Local dev
+# ------------------------------------------------------------------------------
+
+[tasks.dev]
+description = "Rust server を DEV_MODE で起動。別途 `mise run web:dev` で Vite dev も上げる前提"
+run = "NAPO_DEV_MODE=true NAPO_DB=./napo.db cargo run"
+
+[tasks."dev:integrated"]
+description = "Web を build → Rust が NAPO_STATIC=./static/dist で配信(本番に近い形)"
+depends = ["web:build"]
+run = "NAPO_DEV_MODE=true NAPO_DB=./napo.db NAPO_STATIC=./static/dist cargo run"
+
+# ------------------------------------------------------------------------------
+# Web (Vite+ + React) は web/ で実行
+# ------------------------------------------------------------------------------
 
 [tasks."web:dev"]
-description = "Run dev server (localhost:5173, /api と /ws を Rust:8080 へ proxy)"
+description = "Vite dev server (localhost:5173 → /api・/ws を Rust:8080 へ proxy)"
 dir = "web"
 run = "vp dev"
 
@@ -59,7 +70,7 @@ dir = "web"
 run = "vp build"
 
 [tasks."web:check"]
-description = "fmt + lint + tsc(format も自動修正)"
+description = "fmt + lint + tsc(format は自動修正)"
 dir = "web"
 run = "vp check --fix"
 
@@ -69,15 +80,116 @@ dir = "web"
 run = "vp lint"
 
 [tasks."web:fmt"]
-description = "Format(Oxfmt)"
+description = "Format (Oxfmt)"
 dir = "web"
 run = "vp fmt"
 
 [tasks."web:test"]
-description = "Vitest (Vite+ 経由)"
+description = "Vitest"
 dir = "web"
 run = "vp test"
 
 [tasks."web:types"]
-description = "Rust の protocol.rs から TS 型を web/src/types/ に再生成"
+description = "src/protocol.rs から TS 型を web/src/types/ に再生成"
 run = "cargo test --lib export_bindings --quiet"
+
+# ------------------------------------------------------------------------------
+# Release build(musl static-pie)
+# ------------------------------------------------------------------------------
+
+[tasks."build:release"]
+description = "musl static-pie を cross (Docker) でビルド"
+run = "cross build --release --target x86_64-unknown-linux-musl"
+
+[tasks."build:release-native"]
+description = "musl-cross をローカルに入れている場合の直 build(macOS では非推奨)"
+run = "cargo build --release --target x86_64-unknown-linux-musl"
+
+# ------------------------------------------------------------------------------
+# Deploy(HOST=user@host PORT=22 mise run deploy で上書き可)
+# ------------------------------------------------------------------------------
+
+[tasks.deploy]
+description = "フルデプロイ: web build + binary cross-build + 両方転送 + restart"
+depends = ["deploy:web", "build:release"]
+run = '''
+HOST="${HOST:-ubuntu@napo.example.com}"
+PORT="${PORT:-22}"
+TARGET="x86_64-unknown-linux-musl"
+scp -P "$PORT" "target/$TARGET/release/napo-online" "$HOST:/tmp/"
+ssh -p "$PORT" "$HOST" '
+  sudo install -m 755 -o napo -g napo \
+      /tmp/napo-online /opt/napo/napo-online.new && \
+  sudo mv -f /opt/napo/napo-online /opt/napo/napo-online.prev 2>/dev/null || true && \
+  sudo mv /opt/napo/napo-online.new /opt/napo/napo-online && \
+  sudo systemctl restart napo
+'
+'''
+
+[tasks."deploy:bin"]
+description = "binary だけ転送(web 変更なし時)"
+depends = ["build:release"]
+run = '''
+HOST="${HOST:-ubuntu@napo.example.com}"
+PORT="${PORT:-22}"
+TARGET="x86_64-unknown-linux-musl"
+scp -P "$PORT" "target/$TARGET/release/napo-online" "$HOST:/tmp/"
+ssh -p "$PORT" "$HOST" '
+  sudo install -m 755 -o napo -g napo \
+      /tmp/napo-online /opt/napo/napo-online.new && \
+  sudo mv -f /opt/napo/napo-online /opt/napo/napo-online.prev 2>/dev/null || true && \
+  sudo mv /opt/napo/napo-online.new /opt/napo/napo-online && \
+  sudo systemctl restart napo
+'
+'''
+
+[tasks."deploy:web"]
+description = "Web bundle のみ本番に転送 (/opt/napo/dist/)"
+depends = ["web:build"]
+run = '''
+HOST="${HOST:-ubuntu@napo.example.com}"
+PORT="${PORT:-22}"
+rsync -avz --delete -e "ssh -p $PORT" static/dist/ "$HOST:/tmp/napo-dist/"
+ssh -p "$PORT" "$HOST" '
+  sudo rm -rf /opt/napo/dist && \
+  sudo mv /tmp/napo-dist /opt/napo/dist && \
+  sudo chown -R napo:napo /opt/napo/dist
+'
+'''
+
+[tasks."deploy:rollback"]
+description = ".prev に戻す(バイナリのみ。web は別途巻き戻し)"
+run = '''
+HOST="${HOST:-ubuntu@napo.example.com}"
+PORT="${PORT:-22}"
+ssh -p "$PORT" "$HOST" '
+  sudo mv /opt/napo/napo-online /opt/napo/napo-online.broken && \
+  sudo mv /opt/napo/napo-online.prev /opt/napo/napo-online && \
+  sudo systemctl restart napo
+'
+'''
+
+# ------------------------------------------------------------------------------
+# Ops
+# ------------------------------------------------------------------------------
+
+[tasks.logs]
+description = "本番 journalctl を tail"
+run = '''
+HOST="${HOST:-ubuntu@napo.example.com}"
+PORT="${PORT:-22}"
+ssh -p "$PORT" "$HOST" 'sudo journalctl -u napo -f'
+'''
+
+[tasks.health]
+description = "/healthz への疎通確認。`URL=https://... mise run health` で上書き可"
+run = "curl -sS -o /dev/null -w 'HTTP %{http_code}\\n' \"${URL:-https://napo.example.com/healthz}\""
+
+[tasks."db:pull"]
+description = "本番 game.db を ./game.prod.db に scp"
+run = '''
+HOST="${HOST:-ubuntu@napo.example.com}"
+PORT="${PORT:-22}"
+scp -P "$PORT" "$HOST:/var/lib/napo/game.db" ./game.prod.db
+echo "downloaded ./game.prod.db"
+'''
