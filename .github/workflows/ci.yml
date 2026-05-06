@@ -59,3 +59,39 @@ jobs:
           path: static/dist
           if-no-files-found: error
           retention-days: 7
+
+  e2e:
+    name: e2e (Playwright × 5 player)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: install vite-plus (vp)
+        run: |
+          curl -fsSL https://vite.plus | bash
+          echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
+      - name: pnpm install (web/)
+        working-directory: web
+        run: vp install
+      - name: cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+      - name: install Playwright browsers
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+      # webServer config が `mise run dev:integrated`(web build + cargo run)を起動して
+      # /healthz を待つ。テスト終了で kill される。
+      - run: mise run web:e2e
+      - name: upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 14

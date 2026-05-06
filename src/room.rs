@@ -763,6 +763,8 @@ impl Room {
             }
             self.phase = LocalPhase::BetweenHands;
             self.next_ready.clear();
+            self.broadcast_room_state().await;
+            self.persist().await;
         }
     }
 

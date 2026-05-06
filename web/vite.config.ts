@@ -23,7 +23,13 @@ export default defineConfig({
     env: {
       builtin: true,
     },
-    ignorePatterns: ["dist"],
+    ignorePatterns: [
+      "dist",
+      "test-results",
+      "playwright-report",
+      "playwright.config.ts",
+      "tests/**",
+    ],
     overrides: [
       {
         files: ["**/*.{ts,tsx}"],

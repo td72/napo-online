@@ -104,7 +104,7 @@ function LobbyView() {
   return (
     <div style={{ padding: "16px", maxWidth: 760, margin: "0 auto" }}>
       {status === "disconnected" && (
-        <section style={panelStyle}>
+        <section style={panelStyle} data-testid="panel-connect">
           <h2 style={h2Style}>接続</h2>
           <div style={rowStyle}>
             <input
@@ -112,14 +112,21 @@ function LobbyView() {
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="表示名"
               style={inputStyle}
+              data-testid="input-display-name"
             />
             <input
               value={devEmail}
               onChange={(e) => setDevEmail(e.target.value)}
               placeholder="dev_email"
               style={inputStyle}
+              data-testid="input-dev-email"
             />
-            <button type="button" onClick={() => connect(displayName, devEmail)} style={btnStyle}>
+            <button
+              type="button"
+              onClick={() => connect(displayName, devEmail)}
+              style={btnStyle}
+              data-testid="btn-connect"
+            >
               接続
             </button>
           </div>
@@ -127,10 +134,15 @@ function LobbyView() {
       )}
 
       {status === "connected" && !room && (
-        <section style={panelStyle}>
+        <section style={panelStyle} data-testid="panel-lobby">
           <h2 style={h2Style}>ルーム</h2>
           <div style={rowStyle}>
-            <button type="button" onClick={() => send({ type: "create_room" })} style={btnStyle}>
+            <button
+              type="button"
+              onClick={() => send({ type: "create_room" })}
+              style={btnStyle}
+              data-testid="btn-create-room"
+            >
               新規作成
             </button>
             <input
@@ -138,11 +150,13 @@ function LobbyView() {
               onChange={(e) => setRoomIdInput(e.target.value)}
               placeholder="room_id"
               style={inputStyle}
+              data-testid="input-room-id"
             />
             <button
               type="button"
               onClick={() => send({ type: "join_room", payload: { room_id: roomIdInput } })}
               style={btnStyle}
+              data-testid="btn-join-room"
             >
               参加
             </button>
@@ -151,18 +165,19 @@ function LobbyView() {
       )}
 
       {room && (
-        <section style={panelStyle}>
+        <section style={panelStyle} data-testid="panel-room" data-phase={phaseType}>
           <h2 style={h2Style}>
-            部屋 {room.room_id}{" "}
+            部屋 <span data-testid="text-room-id">{room.room_id}</span>{" "}
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>· {phaseType}</span>
           </h2>
           <p style={{ color: "var(--text-secondary)", margin: 0, fontSize: 12 }}>
             host: {room.host} ({isHost ? "あなた" : "他"})
           </p>
-          <ul style={{ paddingLeft: "1.2rem", marginTop: 8 }}>
+          <ul style={{ paddingLeft: "1.2rem", marginTop: 8 }} data-testid="list-players">
             {room.players.map((p) => (
               <li
                 key={p.player_id}
+                data-testid={`list-player-${p.player_id}`}
                 style={{ color: p.online ? undefined : "var(--text-muted)", fontSize: 13 }}
               >
                 {p.display_name} {p.seat !== null && `· seat${p.seat}`} {!p.online && "— offline"}
@@ -171,12 +186,22 @@ function LobbyView() {
           </ul>
           <div style={{ ...rowStyle, marginTop: 10 }}>
             {phaseType === "lobby" && isHost && (
-              <button type="button" onClick={() => send({ type: "start_match" })} style={btnStyle}>
+              <button
+                type="button"
+                onClick={() => send({ type: "start_match" })}
+                style={btnStyle}
+                data-testid="btn-start-match"
+              >
                 Start Match
               </button>
             )}
             {phaseType === "between_hands" && (
-              <button type="button" onClick={() => send({ type: "next_hand" })} style={btnStyle}>
+              <button
+                type="button"
+                onClick={() => send({ type: "next_hand" })}
+                style={btnStyle}
+                data-testid="btn-next-hand-room"
+              >
                 Next Hand
               </button>
             )}
@@ -288,7 +313,15 @@ function GameStage() {
   const myName = mySeatName({ seats, mySeat, myEmail });
 
   if (!vm || !observation || mySeat === null) {
-    return <div style={{ padding: 16, color: "var(--text-secondary)" }}>observation 待機中…</div>;
+    return (
+      <div
+        style={{ padding: 16, color: "var(--text-secondary)" }}
+        data-testid="game-stage"
+        data-overlay="loading"
+      >
+        observation 待機中…
+      </div>
+    );
   }
 
   const onPlay = () => {
@@ -300,7 +333,15 @@ function GameStage() {
   };
 
   return (
-    <div style={{ padding: 16 }}>
+    <div
+      style={{ padding: 16 }}
+      data-testid="game-stage"
+      data-overlay={overlay ?? "none"}
+      data-my-turn={observation.to_act === mySeat ? "true" : "false"}
+      data-completed-tricks={observation.completed.length}
+      data-trick-index={observation.trick_index}
+      data-room-phase={room?.state.type ?? "unknown"}
+    >
       <div style={{ display: "flex", gap: 8, marginBottom: 8, justifyContent: "center" }}>
         {(["pc", "mobile"] as const).map((v) => (
           <button

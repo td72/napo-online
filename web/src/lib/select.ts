@@ -3,7 +3,7 @@
 
 import type { CornerPos, FieldPlayVM, GamePcViewModel, OpponentVM } from "../components/GamePC";
 import type { BidSeatVM, OverlayPhase, StandingVM, TeamPlayerVM } from "../components/Overlays";
-import type { SuitKey } from "../components/card-shared";
+import { effectiveLeadSuit, type SuitKey } from "../components/card-shared";
 import type {
   PublicEvent,
   RoomView,
@@ -116,9 +116,6 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
     lead: i === 0,
   }));
 
-  const leadCard = observation.current_trick[0]?.card;
-  const leadSuit = leadCard ? trumpSuitFromCode(leadCard[0]) : null;
-
   const napoSeat = observation.declarer;
   const napoName = napoSeat !== null && napoSeat !== undefined ? nameOf(napoSeat) : "—";
 
@@ -126,6 +123,10 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
   const trumpSuit = trumpSuitFromCode(trumpFromBid) ?? "S";
   const isNoTrump = trumpFromBid === "NT";
   const bidValue = observation.current_bid?.bid.tricks ?? 0;
+
+  // 裏 J ルール: lead suit は単純 surface ではなく、sei/ura-jack が lead なら trump 扱い。
+  const leadCard = observation.current_trick[0]?.card;
+  const leadSuit = effectiveLeadSuit(leadCard, isNoTrump ? null : trumpSuit, isNoTrump);
 
   return {
     phase: observation.to_act === mySeat ? "turn" : "wait",

@@ -5,7 +5,7 @@
 // Phase E で Zustand store + observation から viewModel を派生させる。
 
 import type { CSSProperties } from "react";
-import { type SuitKey, SUITS, parseCard } from "./card-shared";
+import { belongsToLead, type SuitKey, SUITS, parseCard } from "./card-shared";
 import { Suit, TrumpCard } from "./Card";
 import { PlayerBadge } from "./Player";
 
@@ -196,12 +196,15 @@ export function GamePC({ vm, selectedIdx, onSelectCard, onPlay }: GamePCProps) {
           onSelect={onSelectCard}
           disabled={vm.phase !== "turn"}
           leadSuit={vm.leadSuit}
+          trumpSuit={vm.trumpSuit}
+          isNoTrump={vm.isNoTrump}
         />
 
         <button
           type="button"
           onClick={onPlay}
           disabled={vm.phase !== "turn" || selectedIdx == null}
+          data-testid="btn-play"
           style={{
             ...primaryBtn,
             opacity: vm.phase !== "turn" || selectedIdx == null ? 0.4 : 1,
@@ -589,15 +592,21 @@ function Hand({
   onSelect,
   disabled,
   leadSuit,
+  trumpSuit,
+  isNoTrump,
 }: {
   hand: string[];
   selectedIdx: number | null;
   onSelect: (i: number) => void;
   disabled: boolean;
   leadSuit: SuitKey | null;
+  trumpSuit: SuitKey;
+  isNoTrump: boolean;
 }) {
   const n = hand.length;
-  const hasLead = leadSuit !== null && hand.some((c) => parseCard(c).suit === leadSuit);
+  const hasLead =
+    leadSuit !== null &&
+    hand.some((c) => belongsToLead(c, leadSuit, isNoTrump ? null : trumpSuit, isNoTrump));
   return (
     <div
       style={{
@@ -613,14 +622,19 @@ function Hand({
         const offset = i - (n - 1) / 2;
         const rot = offset * 4.5;
         const ty = Math.abs(offset) * 4;
-        const { suit } = parseCard(code);
-        // standard Napoleon: must follow lead suit if held.
-        const playable = !leadSuit || !hasLead || suit === leadSuit;
+        // standard Napoleon: must follow lead suit if held(裏 J ルール込み)。
+        const playable =
+          !leadSuit ||
+          !hasLead ||
+          belongsToLead(code, leadSuit, isNoTrump ? null : trumpSuit, isNoTrump);
         const isHighlight = code === "SA" ? "mighty" : code === "HJ" ? "jack" : null;
 
         return (
           <div
             key={code}
+            data-testid={`hand-card-${code}`}
+            data-playable={playable && !disabled ? "true" : "false"}
+            data-selected={selectedIdx === i ? "true" : "false"}
             style={{
               marginLeft: i === 0 ? 0 : -28,
               zIndex: selectedIdx === i ? 30 : i,

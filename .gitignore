@@ -27,3 +27,9 @@ static/dist/
 napo.db
 napo.db-wal
 napo.db-shm
+
+# Playwright artifacts
+web/test-results/
+web/playwright-report/
+web/playwright/.cache/
+/tmp/napo-e2e.db*
