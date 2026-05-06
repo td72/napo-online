@@ -1,17 +1,19 @@
 // tmp/design/overlays.jsx を TSX 化。phase ごとに full-screen overlay を表示する。
 // - bid: 入札ラウンド中。各 seat の現在 bid を表示 + 自分の bid 入力
 // - partner: 副官指名中(declarer が選択するのを待つ全員向け表示)
+// - widow: 場札交換中(declarer のみ。場札 2 枚 + 手札 10 枚から捨て札 2 枚を選ぶ)
 // - trick-result: 1トリック完了で勝者を発表
 // - end: ゲーム(局)終了 + standings
 //
 // shared 定数(overlayBase / pillBtn / primaryBtn など)は Overlays.tsx 内に閉じる。
 
+import { useState } from "react";
 import type { CSSProperties } from "react";
 import type { SuitKey } from "./card-shared";
 import { Suit, TrumpCard } from "./Card";
 import { Avatar } from "./Player";
 
-export type OverlayPhase = "bid" | "partner" | "trick-result" | "end" | null;
+export type OverlayPhase = "bid" | "partner" | "widow" | "trick-result" | "end" | null;
 
 export type CornerPos = "tl" | "tr" | "bl" | "br";
 
@@ -367,15 +369,27 @@ function BidSeat({
   );
 }
 
-// ====================== Partner (副官指名待ち) ======================
+// ====================== Partner (副官指名) ======================
 
 export interface PartnerOverlayProps {
   mobile?: boolean;
   /** declarer の名前(「ミナトが副官カードを選んでいます」)。 */
   declarerName: string;
+  /**
+   * 自分が declarer のとき:インタラクティブな picker モードを有効化。
+   * 設定がなければ非 declarer の wait UI を出す。
+   */
+  picker?: {
+    selectedCard: string | null;
+    onSelect: (card: string) => void;
+    onConfirm: () => void;
+  };
 }
 
-export function PartnerOverlay({ mobile, declarerName }: PartnerOverlayProps) {
+const RANKS_DESC = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"] as const;
+
+export function PartnerOverlay({ mobile, declarerName, picker }: PartnerOverlayProps) {
+  const isPicker = picker !== undefined;
   return (
     <div style={overlayBase}>
       <div
@@ -393,9 +407,11 @@ export function PartnerOverlay({ mobile, declarerName }: PartnerOverlayProps) {
           borderRadius: "var(--radius-lg)",
           padding: mobile ? 20 : 36,
           boxShadow: "var(--shadow-lg)",
-          maxWidth: mobile ? 340 : 620,
-          width: "90%",
+          maxWidth: mobile ? 340 : 720,
+          width: "92%",
           textAlign: "center",
+          maxHeight: "92%",
+          overflowY: "auto",
         }}
       >
         <div
@@ -416,12 +432,14 @@ export function PartnerOverlay({ mobile, declarerName }: PartnerOverlayProps) {
             color: "var(--text-primary)",
           }}
         >
-          {declarerName}が副官カードを選んでいます
+          {isPicker ? "副官カードを指名してください" : `${declarerName}が副官カードを選んでいます`}
         </h1>
         <p
           style={{ fontSize: mobile ? 11 : 13, color: "var(--text-secondary)", margin: "0 0 22px" }}
         >
-          選ばれたカードを持つ人が{declarerName}の味方となります(全員に秘密)
+          {isPicker
+            ? "選んだカードを持つ人があなたの味方になります(誰にも明かされません)"
+            : `選ばれたカードを持つ人が${declarerName}の味方となります(全員に秘密)`}
         </p>
 
         <div
@@ -430,18 +448,38 @@ export function PartnerOverlay({ mobile, declarerName }: PartnerOverlayProps) {
             flexDirection: "column",
             gap: mobile ? 6 : 10,
             alignItems: "center",
-            opacity: 0.85,
+            opacity: isPicker ? 1 : 0.85,
           }}
         >
           {(["S", "H", "D", "C"] as const).map((s) => (
             <div key={s} style={{ display: "flex", gap: mobile ? 2 : 4 }}>
-              {(["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"] as const).map(
-                (r) => (
-                  <div key={r} style={{ filter: "grayscale(0.5) opacity(0.65)" }}>
-                    <TrumpCard code={s + r} w={mobile ? 22 : 36} h={mobile ? 32 : 52} />
+              {RANKS_DESC.map((r) => {
+                const code = s + r;
+                const isSelected = picker?.selectedCard === code;
+                return (
+                  <div
+                    key={r}
+                    style={{
+                      cursor: isPicker ? "pointer" : "default",
+                      filter: isPicker
+                        ? isSelected
+                          ? "drop-shadow(0 0 6px rgba(217,83,79,0.6))"
+                          : "none"
+                        : "grayscale(0.5) opacity(0.65)",
+                      transform: isSelected ? "translateY(-4px)" : "none",
+                      transition: "transform 120ms",
+                    }}
+                    onClick={isPicker ? () => picker.onSelect(code) : undefined}
+                  >
+                    <TrumpCard
+                      code={code}
+                      w={mobile ? 22 : 36}
+                      h={mobile ? 32 : 52}
+                      selected={isSelected}
+                    />
                   </div>
-                ),
-              )}
+                );
+              })}
             </div>
           ))}
         </div>
@@ -455,30 +493,263 @@ export function PartnerOverlay({ mobile, declarerName }: PartnerOverlayProps) {
             alignItems: "center",
           }}
         >
-          <div
+          {isPicker ? (
+            <button
+              type="button"
+              onClick={picker.onConfirm}
+              disabled={picker.selectedCard === null}
+              style={{
+                ...primaryBtn,
+                padding: mobile ? "8px 18px" : "10px 22px",
+                fontSize: mobile ? 12 : 14,
+                opacity: picker.selectedCard === null ? 0.4 : 1,
+                cursor: picker.selectedCard === null ? "not-allowed" : "pointer",
+              }}
+            >
+              {picker.selectedCard ? `${picker.selectedCard} を指名` : "カードを選択"}
+            </button>
+          ) : (
+            <div
+              style={{
+                padding: mobile ? "5px 14px" : "7px 18px",
+                background: "var(--bg-secondary)",
+                borderRadius: 99,
+                fontSize: mobile ? 11 : 13,
+                color: "var(--text-secondary)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--accent-primary)",
+                  animation: "turn-pulse 1.5s ease-in-out infinite",
+                }}
+              />
+              {declarerName}の選択を待っています…
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ====================== Widow exchange ======================
+
+export interface WidowOverlayProps {
+  mobile?: boolean;
+  /** 場札(declarer から見える 2 枚)。 */
+  widow: string[];
+  /** declarer の手札(10 枚)。 */
+  hand: string[];
+  /** 捨てる枚数(通常 widow と同枚数 = 2)。 */
+  discardCount: number;
+  onConfirm: (discard: string[]) => void;
+}
+
+export function WidowOverlay({ mobile, widow, hand, discardCount, onConfirm }: WidowOverlayProps) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const toggle = (c: string) => {
+    setSelected((prev) => {
+      if (prev.includes(c)) return prev.filter((x) => x !== c);
+      if (prev.length >= discardCount) return prev;
+      return [...prev, c];
+    });
+  };
+  const ready = selected.length === discardCount;
+  const cardW = mobile ? 38 : 56;
+  const cardH = mobile ? 54 : 80;
+  return (
+    <div style={overlayBase}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "rgba(43,38,32,0.7)",
+          backdropFilter: "blur(6px)",
+        }}
+      />
+      <div
+        style={{
+          position: "relative",
+          background: "var(--bg-primary)",
+          borderRadius: "var(--radius-lg)",
+          padding: mobile ? 16 : 28,
+          boxShadow: "var(--shadow-lg)",
+          maxWidth: mobile ? 360 : 760,
+          width: "92%",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            fontSize: mobile ? 10 : 12,
+            letterSpacing: 4,
+            color: "var(--text-muted)",
+            marginBottom: 4,
+          }}
+        >
+          WIDOW EXCHANGE
+        </div>
+        <h1
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: mobile ? 22 : 28,
+            margin: "0 0 6px",
+            color: "var(--text-primary)",
+          }}
+        >
+          場札を取り、捨て札を選んでください
+        </h1>
+        <p
+          style={{
+            fontSize: mobile ? 11 : 13,
+            color: "var(--text-secondary)",
+            margin: "0 0 18px",
+          }}
+        >
+          場札 {widow.length} 枚 + 手札 {hand.length} 枚 から{discardCount}枚を捨てる
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            marginBottom: 18,
+          }}
+        >
+          <CardRow
+            label="場札"
+            cards={widow}
+            selected={selected}
+            onToggle={toggle}
+            cardW={cardW}
+            cardH={cardH}
+            highlight
+          />
+          <CardRow
+            label="手札"
+            cards={hand}
+            selected={selected}
+            onToggle={toggle}
+            cardW={cardW}
+            cardH={cardH}
+          />
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: mobile ? 11 : 13, color: "var(--text-secondary)" }}>
+            選択中:{" "}
+            <span style={{ fontFamily: "var(--font-serif)", color: "var(--accent-primary)" }}>
+              {selected.length}
+            </span>{" "}
+            / {discardCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => onConfirm(selected)}
+            disabled={!ready}
             style={{
-              padding: mobile ? "5px 14px" : "7px 18px",
-              background: "var(--bg-secondary)",
-              borderRadius: 99,
-              fontSize: mobile ? 11 : 13,
-              color: "var(--text-secondary)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
+              ...primaryBtn,
+              padding: mobile ? "8px 18px" : "10px 22px",
+              fontSize: mobile ? 12 : 14,
+              opacity: ready ? 1 : 0.4,
+              cursor: ready ? "pointer" : "not-allowed",
             }}
           >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "var(--accent-primary)",
-                animation: "turn-pulse 1.5s ease-in-out infinite",
-              }}
-            />
-            {declarerName}の選択を待っています…
-          </div>
+            捨てる
+          </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CardRow({
+  label,
+  cards,
+  selected,
+  onToggle,
+  cardW,
+  cardH,
+  highlight,
+}: {
+  label: string;
+  cards: string[];
+  selected: string[];
+  onToggle: (c: string) => void;
+  cardW: number;
+  cardH: number;
+  /** widow 行の枠を強調(取得済みカードであることを視覚的に示す)。 */
+  highlight?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: 1 }}>{label}</div>
+      <div
+        style={{
+          display: "flex",
+          gap: 4,
+          flexWrap: "wrap",
+          justifyContent: "center",
+          padding: highlight ? 6 : 0,
+          borderRadius: 6,
+          background: highlight ? "rgba(217,83,79,0.08)" : "transparent",
+          border: highlight ? "1px dashed rgba(217,83,79,0.4)" : "none",
+        }}
+      >
+        {cards.map((c, i) => {
+          const isDiscard = selected.includes(c);
+          return (
+            <div
+              key={`${c}-${i}`}
+              style={{ position: "relative", cursor: "pointer" }}
+              onClick={() => onToggle(c)}
+            >
+              <TrumpCard code={c} w={cardW} h={cardH} dimmed={isDiscard} />
+              {isDiscard && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "var(--accent-primary)",
+                      color: "#fff",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: 3,
+                      letterSpacing: 1,
+                    }}
+                  >
+                    DROP
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

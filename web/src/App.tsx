@@ -2,7 +2,7 @@
 // observation が無いときは Lobby を出して接続/ルーム/Match 開始を行う。
 // dev preview(gallery / mock game / mock overlays)は <DevPreview/> として末尾に残す。
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TrumpCard } from "./components/Card";
 import { GameMobile } from "./components/GameMobile";
 import { GamePC, type GamePcViewModel } from "./components/GamePC";
@@ -12,6 +12,7 @@ import {
   type OverlayPhase,
   PartnerOverlay,
   TrickResultOverlay,
+  WidowOverlay,
 } from "./components/Overlays";
 import { Avatar, PlayerBadge } from "./components/Player";
 import {
@@ -19,6 +20,7 @@ import {
   declarerName,
   mySeatName,
   selectBidVMs,
+  selectEndVm,
   selectGameVm,
   selectOverlayPhase,
 } from "./lib/select";
@@ -219,6 +221,16 @@ function LobbyView() {
   );
 }
 
+interface TrickResultVM {
+  trickIndex: number;
+  winnerName: string;
+  facesGained: number;
+  cards: { card: string; rot: number }[];
+}
+
+const TRICK_RESULT_DURATION_MS = 2000;
+const FACE_RANKS = new Set(["A", "K", "Q", "J", "10"]);
+
 function GameStage() {
   const observation = useStore((s) => s.observation);
   const room = useStore((s) => s.room);
@@ -227,12 +239,40 @@ function GameStage() {
   const myEmail = useStore((s) => s.myEmail);
   const hands_per_match = useStore((s) => s.hands_per_match);
   const events = useStore((s) => s.events);
+  const finalScores = useStore((s) => s.finalScores);
   const submitAction = useStore((s) => s.submitAction);
+  const send = useStore((s) => s.send);
 
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [selectedTricks, setSelectedTricks] = useState(13);
   const [selectedTrump, setSelectedTrump] = useState<WireTrump>("S");
   const [layout, setLayout] = useState<"pc" | "mobile">("pc");
+  const [trickResult, setTrickResult] = useState<TrickResultVM | null>(null);
+
+  // observation.completed.length が増えた瞬間を捉えて TrickResultOverlay を一定時間出す
+  const completedCount = observation?.completed.length ?? 0;
+  const lastShownCount = useRef(completedCount);
+  useEffect(() => {
+    if (!observation || !seats) return;
+    if (completedCount <= lastShownCount.current) {
+      // 初期化時 or 局またぎで count がリセットされた
+      lastShownCount.current = completedCount;
+      return;
+    }
+    lastShownCount.current = completedCount;
+    const latest = observation.completed[completedCount - 1];
+    const winnerName =
+      seats.find((s) => s.seat === latest.winner)?.display_name ?? `seat${latest.winner}`;
+    const facesGained = latest.plays.filter((p) => FACE_RANKS.has(p.card.slice(1))).length;
+    setTrickResult({
+      trickIndex: completedCount,
+      winnerName,
+      facesGained,
+      cards: latest.plays.map((p, i) => ({ card: p.card, rot: i % 2 === 0 ? -8 : 8 })),
+    });
+    const t = setTimeout(() => setTrickResult(null), TRICK_RESULT_DURATION_MS);
+    return () => clearTimeout(t);
+  }, [observation, seats, completedCount]);
 
   const handIndex = currentHandIndex(events);
   const vm = selectGameVm({
@@ -328,10 +368,111 @@ function GameStage() {
           {overlay === "partner" && (
             <PartnerStageOverlay mySeat={mySeat} mobile={layout === "mobile"} />
           )}
+          {overlay === "widow" && (
+            <WidowStageOverlay
+              observation={observation}
+              mySeat={mySeat}
+              mobile={layout === "mobile"}
+            />
+          )}
+          {trickResult && (
+            <TrickResultOverlay
+              mobile={layout === "mobile"}
+              trickIndex={trickResult.trickIndex}
+              winnerName={trickResult.winnerName}
+              facesGained={trickResult.facesGained}
+              cards={trickResult.cards}
+            />
+          )}
+          <HandEndStageOverlay
+            handIndex={handIndex}
+            hands_per_match={hands_per_match}
+            mobile={layout === "mobile"}
+            onNext={() => send({ type: "next_hand" })}
+          />
+          {finalScores && room?.state.type === "ended" && (
+            <FinalMatchOverlay finalScores={finalScores} />
+          )}
         </div>
       </div>
       <DevControls />
     </div>
+  );
+}
+
+function HandEndStageOverlay({
+  handIndex,
+  hands_per_match,
+  mobile,
+  onNext,
+}: {
+  handIndex: number | null;
+  hands_per_match: number | null;
+  mobile?: boolean;
+  onNext: () => void;
+}) {
+  const observation = useStore((s) => s.observation);
+  const seats = useStore((s) => s.seats);
+  const lastScores = useStore((s) => s.lastScores);
+  const room = useStore((s) => s.room);
+
+  const phaseType = room?.state.type;
+  const isBetween = phaseType === "between_hands" || phaseType === "ended";
+  if (!isBetween) return null;
+
+  const endSel = selectEndVm({ observation, seats, lastScores });
+  if (!endSel) return null;
+
+  return (
+    <EndOverlay
+      mobile={mobile}
+      napoTeam={endSel.napoTeam}
+      armyTeam={endSel.armyTeam}
+      napoScore={endSel.napoScore}
+      armyScore={endSel.armyScore}
+      napoWon={endSel.napoWon}
+      bidValue={endSel.bidValue}
+      taken={endSel.taken}
+      standings={endSel.standings}
+      currentGame={(handIndex ?? 0) + 1}
+      totalGames={hands_per_match ?? 10}
+      matchEnded={phaseType === "ended"}
+      onNext={onNext}
+    />
+  );
+}
+
+function FinalMatchOverlay({ finalScores }: { finalScores: number[] }) {
+  // ended phase で最終 standings を出すための簡易バッジ。EndOverlay 内 standings と重複するので
+  // 暫定的に何も表示しない(EndOverlay 側で matchEnded=true による「セット終了」ラベルがある)。
+  // finalScores の使用は将来 (Match 集計画面 等) を想定して引数だけ受けておく。
+  void finalScores;
+  return null;
+}
+
+function WidowStageOverlay({
+  observation,
+  mySeat,
+  mobile,
+}: {
+  observation: import("./types").WireObservation;
+  mySeat: number;
+  mobile?: boolean;
+}) {
+  const submitAction = useStore((s) => s.submitAction);
+  const isDeclarer = observation.declarer === mySeat;
+
+  // declarer 以外は overlay を出さず、GamePC の wait UI に任せる
+  if (!isDeclarer || !observation.visible_widow) return null;
+
+  return (
+    <WidowOverlay
+      mobile={mobile}
+      widow={observation.visible_widow}
+      hand={observation.hand}
+      discardCount={observation.visible_widow.length}
+      onConfirm={(discard) => submitAction({ type: "exchange_widow", payload: { discard } })}
+    />
   );
 }
 
@@ -388,89 +529,29 @@ function PartnerStageOverlay({ mySeat, mobile }: { mySeat: number; mobile?: bool
   const observation = useStore((s) => s.observation);
   const seats = useStore((s) => s.seats);
   const submitAction = useStore((s) => s.submitAction);
+  const [picked, setPicked] = useState<string | null>(null);
 
   const name = declarerName({ observation, seats }) ?? "—";
   if (!observation) return null;
 
-  // 自分が declarer の場合: PartnerOverlay の上に簡易 picker を被せる(設計後で差し替え)。
   const amDeclarer = observation.declarer === mySeat;
 
   return (
-    <>
-      <PartnerOverlay mobile={mobile} declarerName={name} />
-      {amDeclarer && (
-        <DeclarerAdjutantPicker
-          onPick={(card) => submitAction({ type: "declare_adjutant", payload: { card } })}
-        />
-      )}
-    </>
-  );
-}
-
-function DeclarerAdjutantPicker({ onPick }: { onPick: (card: string) => void }) {
-  const [card, setCard] = useState("HA");
-  const suits: WireTrump[] = ["S", "H", "D", "C"];
-  const ranks = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"];
-  return (
-    <div
-      style={{
-        position: "absolute",
-        zIndex: 60,
-        left: "50%",
-        bottom: 40,
-        transform: "translateX(-50%)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        padding: 12,
-        background: "var(--bg-primary)",
-        border: "1px solid var(--border-color)",
-        borderRadius: "var(--radius-md)",
-        boxShadow: "var(--shadow-lg)",
-      }}
-    >
-      <div style={{ fontSize: 12, fontWeight: 600 }}>副官カードを選択</div>
-      <div style={{ display: "flex", gap: 4 }}>
-        {suits.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setCard(s + card.slice(1))}
-            style={{
-              ...btnStyle,
-              background: card[0] === s ? "var(--accent-secondary)" : "transparent",
-              color: card[0] === s ? "#fff" : "var(--text-primary)",
-              border: "1px solid var(--border-color)",
-              padding: "2px 8px",
-            }}
-          >
-            {s === "S" ? "♠" : s === "H" ? "♥" : s === "D" ? "♦" : "♣"}
-          </button>
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-        {ranks.map((r) => (
-          <button
-            key={r}
-            type="button"
-            onClick={() => setCard(card[0] + r)}
-            style={{
-              ...btnStyle,
-              background: card.slice(1) === r ? "var(--accent-secondary)" : "transparent",
-              color: card.slice(1) === r ? "#fff" : "var(--text-primary)",
-              border: "1px solid var(--border-color)",
-              padding: "2px 6px",
-              fontSize: 11,
-            }}
-          >
-            {r}
-          </button>
-        ))}
-      </div>
-      <button type="button" onClick={() => onPick(card)} style={btnStyle}>
-        宣言: {card}
-      </button>
-    </div>
+    <PartnerOverlay
+      mobile={mobile}
+      declarerName={name}
+      picker={
+        amDeclarer
+          ? {
+              selectedCard: picked,
+              onSelect: setPicked,
+              onConfirm: () => {
+                if (picked) submitAction({ type: "declare_adjutant", payload: { card: picked } });
+              },
+            }
+          : undefined
+      }
+    />
   );
 }
 

@@ -2,7 +2,7 @@
 // design 由来の GamePcViewModel / Overlay VMs に変換する pure 関数群。
 
 import type { CornerPos, FieldPlayVM, GamePcViewModel, OpponentVM } from "../components/GamePC";
-import type { BidSeatVM, OverlayPhase } from "../components/Overlays";
+import type { BidSeatVM, OverlayPhase, StandingVM, TeamPlayerVM } from "../components/Overlays";
 import type { SuitKey } from "../components/card-shared";
 import type {
   PublicEvent,
@@ -157,14 +157,17 @@ export function mySeatName(input: Pick<SelectInput, "seats" | "mySeat" | "myEmai
 }
 
 /**
- * observation から「現在 phase が Bidding か」を推定。
- * Rust 側 Phase::Bidding は declarer 未確定 + (bid_history が空 or current_bid が null と not all-pass)。
- * adjutant_card 未確定で declarer あり → 副官指名待ち。
+ * observation から overlay phase を推定。
+ * - declarer 未確定 → "bid"
+ * - declarer 決定 + adjutant_card 未確定 → "partner"
+ * - adjutant_card 決定 + visible_widow が見えている(declarer 視点)→ "widow"
+ * - それ以外 → null(通常 play 中)
  */
 export function selectOverlayPhase(obs: WireObservation | null): OverlayPhase {
   if (!obs) return null;
   if (obs.declarer === null) return "bid";
   if (obs.adjutant_card === null) return "partner";
+  if (obs.visible_widow !== null) return "widow";
   return null;
 }
 
@@ -267,4 +270,84 @@ export function declarerName(input: Pick<SelectInput, "observation" | "seats">):
   const seat = observation.declarer;
   if (seat === null || seat === undefined) return null;
   return seats.find((s) => s.seat === seat)?.display_name ?? `seat${seat}`;
+}
+
+export interface EndSelection {
+  napoTeam: TeamPlayerVM[];
+  armyTeam: TeamPlayerVM[];
+  napoScore: number;
+  armyScore: number;
+  napoWon: boolean;
+  bidValue: number;
+  taken: number;
+  standings: StandingVM[];
+}
+
+/**
+ * 局終了 overlay 用 vm。lastScores と完了 observation から napo/army 別チーム成績を組み立てる。
+ * 必要な情報がそろっていなければ null。
+ */
+export function selectEndVm(input: {
+  observation: WireObservation | null;
+  seats: SeatAssignment[] | null;
+  lastScores: { scores: number[]; cumulative: number[] } | null;
+}): EndSelection | null {
+  const { observation, seats, lastScores } = input;
+  if (!observation || !seats || !lastScores) return null;
+  if (observation.declarer === null || observation.current_bid === null) return null;
+
+  const declarer = observation.declarer;
+  const partner = observation.adjutant_player ?? null;
+
+  const tricksByPlayer: number[] = Array.from({ length: observation.num_players }, () => 0);
+  for (const t of observation.completed) tricksByPlayer[t.winner]++;
+
+  const captured = capturedBySeat(observation, observation.num_players);
+
+  const seatToName = new Map<number, string>();
+  for (const s of seats) seatToName.set(s.seat, s.display_name);
+  const nameOf = (seat: number) => seatToName.get(seat) ?? `seat${seat}`;
+
+  const napoTeam: TeamPlayerVM[] = [];
+  const armyTeam: TeamPlayerVM[] = [];
+  const standings: StandingVM[] = [];
+  let napoScore = 0;
+  let armyScore = 0;
+  let taken = 0;
+
+  for (let seat = 0; seat < observation.num_players; seat++) {
+    const name = nameOf(seat);
+    const score = lastScores.scores[seat] ?? 0;
+    const total = lastScores.cumulative[seat] ?? 0;
+    const tricks = tricksByPlayer[seat] ?? 0;
+    const picture = captured[seat]?.length ?? 0;
+    const role: "napo" | "partner" | "army" =
+      seat === declarer ? "napo" : seat === partner ? "partner" : "army";
+
+    standings.push({ name, total, delta: score, role });
+
+    if (role === "napo") {
+      napoTeam.push({ name, tricks, picture });
+      napoScore += score;
+      taken += tricks;
+    } else if (role === "partner") {
+      napoTeam.push({ name, tricks, picture, hidden: "partner" });
+      napoScore += score;
+      taken += tricks;
+    } else {
+      armyTeam.push({ name, tricks, picture });
+      armyScore += score;
+    }
+  }
+
+  return {
+    napoTeam,
+    armyTeam,
+    napoScore,
+    armyScore,
+    napoWon: napoScore > 0,
+    bidValue: observation.current_bid.bid.tricks,
+    taken,
+    standings,
+  };
 }
