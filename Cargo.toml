@@ -9,10 +9,7 @@ axum = { version = "0.8.9", features = ["ws", "macros"] }
 dashmap = "6"
 dotenvy = "0.15.7"
 jsonwebtoken = "10.3.0"
-napo-core = { path = "../napo-core", features = ["serde"] }
-# v0.1.0 タグは napo-core 側に既にあるので、CI に SSH deploy key を設定すれば
-# 以下に切替えてリリース可能(開発時は下の [patch] で path に戻す):
-# napo-core = { git = "ssh://git@github.com/td72/napo-core.git", tag = "v0.1.0", features = ["serde"] }
+napo-core = { git = "https://github.com/td72/napo-core.git", tag = "v0.1.2", features = ["serde"] }
 rand = "0.10.1"
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls"] }
 rusqlite = { version = "0.39.0", features = ["bundled"] }
@@ -31,7 +28,6 @@ uuid = { version = "1.23.1", features = ["v4", "serde"] }
 futures-util = "0.3.32"
 tokio-tungstenite = "0.29.0"
 
-# napo-core を git+tag に切替えたとき、ローカル開発では path に差し替えるための雛形。
-# 上の napo-core 行を git+tag に変えたら、ここを uncomment して有効化(docs §3.3):
-# [patch."ssh://git@github.com/td72/napo-core.git"]
+# ローカル開発で napo-core を path 参照したい場合に有効化(uncomment):
+# [patch."https://github.com/td72/napo-core.git"]
 # napo-core = { path = "../napo-core" }
