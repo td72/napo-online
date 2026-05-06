@@ -100,6 +100,9 @@ export function GameMobile({
           return (
             <div
               key={code}
+              data-testid={`hand-card-${code}`}
+              data-playable={playable ? "true" : "false"}
+              data-selected={selectedIdx === i ? "true" : "false"}
               style={{
                 marginLeft: i === 0 ? 0 : -22,
                 zIndex: selectedIdx === i ? 30 : i,
@@ -234,6 +237,7 @@ export function GameMobile({
           type="button"
           onClick={onPlay}
           disabled={vm.phase !== "turn" || selectedIdx == null}
+          data-testid="btn-play"
           style={{
             ...primaryBtn,
             padding: "7px 16px",
