@@ -96,12 +96,13 @@ run = "cargo test --lib export_bindings --quiet"
 [tasks."web:e2e"]
 description = "Playwright で 5 player E2E。webServer 機能で Rust server を自動起動"
 dir = "web"
-run = "pnpm exec playwright test"
+# vp は pnpm を内部管理して PATH に出さないので、node_modules/.bin/playwright を直叩き。
+run = "node_modules/.bin/playwright test"
 
 [tasks."web:e2e:ui"]
 description = "Playwright UI mode(対話デバッグ)"
 dir = "web"
-run = "pnpm exec playwright test --ui"
+run = "node_modules/.bin/playwright test --ui"
 
 # ------------------------------------------------------------------------------
 # Release build(musl static-pie)
