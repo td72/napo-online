@@ -1464,9 +1464,9 @@ rollback:
 1. 両リポジトリで `cargo test`
 2. `napo-core` を tag 切って push(必要なら `Cargo.toml` の `tag` を更新)
 3. `napo-online` で `cargo update -p napo-core` → コミット
-4. `just deploy`
+4. `mise run deploy`
 5. ブラウザで `https://napo.<your-domain>` 動作確認
-6. 問題があれば `just rollback`
+6. 問題があれば `mise run deploy:rollback`
 
 ---
 
