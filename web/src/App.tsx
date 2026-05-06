@@ -265,6 +265,7 @@ function GameStage() {
   const hands_per_match = useStore((s) => s.hands_per_match);
   const events = useStore((s) => s.events);
   const finalScores = useStore((s) => s.finalScores);
+  const disconnectedSeats = useStore((s) => s.disconnectedSeats);
   const submitAction = useStore((s) => s.submitAction);
   const send = useStore((s) => s.send);
 
@@ -308,6 +309,7 @@ function GameStage() {
     myEmail,
     hands_per_match,
     handIndex,
+    disconnectedSeats,
   });
   const overlay = selectOverlayPhase(observation, events);
   const myName = mySeatName({ seats, mySeat, myEmail });

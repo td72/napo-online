@@ -22,6 +22,10 @@ export interface OpponentVM {
   total?: number;
   isNapo?: boolean;
   isPartner?: boolean;
+  /** 切断中(`true` のとき avatar 灰色化 + ラベル表示)。 */
+  disconnected?: boolean;
+  /** 切断時刻(ms epoch)。経過秒の表示用。 */
+  disconnectedSinceMs?: number;
 }
 
 export interface FieldPlayVM {
@@ -339,6 +343,8 @@ function CornerOpponent({
   total,
   isNapo,
   isPartner,
+  disconnected,
+  disconnectedSinceMs,
 }: OpponentVM) {
   const isBack = depth === "back";
   const inset = isBack ? "18%" : 0;
@@ -412,6 +418,8 @@ function CornerOpponent({
         total={total}
         isNapo={isNapo}
         isPartner={isPartner}
+        disconnected={disconnected}
+        disconnectedSinceMs={disconnectedSinceMs}
         compact
         horizontal
         align={isRight ? "right" : "left"}

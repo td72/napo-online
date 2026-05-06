@@ -3,6 +3,7 @@
 //
 // shared な定数・関数は player-shared.ts に分離(only-export-components 対応)。
 
+import { useEffect, useState } from "react";
 import { type PlayerStatus, type Team, STATUS_TEXT, colorForName } from "./player-shared";
 
 export interface AvatarProps {
@@ -11,9 +12,18 @@ export interface AvatarProps {
   team?: Team;
   active?: boolean;
   ringColor?: string;
+  /** 切断中:grayscale + 透明度を下げる。active より優先。 */
+  disconnected?: boolean;
 }
 
-export function Avatar({ name, size = 40, team = null, active = false, ringColor }: AvatarProps) {
+export function Avatar({
+  name,
+  size = 40,
+  team = null,
+  active = false,
+  ringColor,
+  disconnected = false,
+}: AvatarProps) {
   const initial = name[0] ?? "?";
   const bg = colorForName(name);
   const ring = active
@@ -42,11 +52,45 @@ export function Avatar({ name, size = 40, team = null, active = false, ringColor
             ? `0 0 0 2.5px var(--bg-primary), 0 0 0 4.5px ${ring}, 0 1px 3px rgba(0,0,0,0.18)`
             : "0 1px 3px rgba(0,0,0,0.18)",
         flexShrink: 0,
-        animation: active ? "pulse-ring 1.6s ease-in-out infinite" : "none",
+        // 切断中は active 演出を止め、grayscale + 半透明に。
+        animation: disconnected ? "none" : active ? "pulse-ring 1.6s ease-in-out infinite" : "none",
+        filter: disconnected ? "grayscale(1)" : "none",
+        opacity: disconnected ? 0.5 : 1,
+        transition: "opacity 200ms, filter 200ms",
       }}
     >
       {initial}
     </div>
+  );
+}
+
+/**
+ * 切断中ラベル。`sinceMs` から経過秒を 1 秒間隔で更新表示。
+ * 60s 以下は「切断中 N 秒」、それ以上は「切断中 M 分」。
+ */
+export function DisconnectedBadge({ sinceMs }: { sinceMs: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const elapsedSec = Math.max(0, Math.floor((now - sinceMs) / 1000));
+  const label =
+    elapsedSec < 60 ? `切断中 ${elapsedSec}秒` : `切断中 ${Math.floor(elapsedSec / 60)}分`;
+  return (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 600,
+        letterSpacing: 0.4,
+        padding: "1px 5px",
+        borderRadius: 3,
+        background: "var(--text-muted)",
+        color: "#fff",
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -70,6 +114,10 @@ export interface PlayerBadgeProps {
   isNapo?: boolean;
   /** 副官(発覚済み)。"副" バッジ。 */
   isPartner?: boolean;
+  /** 切断中。avatar 灰色化 + ラベル表示。 */
+  disconnected?: boolean;
+  /** 切断時刻 (ms epoch)。`disconnected` が true のとき経過秒を表示。 */
+  disconnectedSinceMs?: number;
 }
 
 export function PlayerBadge(props: PlayerBadgeProps) {
@@ -85,6 +133,8 @@ export function PlayerBadge(props: PlayerBadgeProps) {
     total,
     isNapo,
     isPartner,
+    disconnected = false,
+    disconnectedSinceMs,
   } = props;
   const statusText = STATUS_TEXT[status];
 
@@ -109,7 +159,7 @@ export function PlayerBadge(props: PlayerBadgeProps) {
         }}
       >
         <div style={{ position: "relative" }}>
-          <Avatar name={name} size={36} active={active} />
+          <Avatar name={name} size={36} active={active} disconnected={disconnected} />
           {isNapo && <NapoleonCrown />}
           {team === "napo" && !isNapo && <NapoChip />}
           {isPartner && <PartnerChip />}
@@ -159,15 +209,19 @@ export function PlayerBadge(props: PlayerBadgeProps) {
               </span>
             )}
           </div>
-          <span
-            style={{
-              fontSize: 10,
-              color: "var(--text-secondary)",
-              fontFamily: "var(--font-serif)",
-            }}
-          >
-            {bid ? bid : statusText}
-          </span>
+          {disconnected && disconnectedSinceMs !== undefined ? (
+            <DisconnectedBadge sinceMs={disconnectedSinceMs} />
+          ) : (
+            <span
+              style={{
+                fontSize: 10,
+                color: "var(--text-secondary)",
+                fontFamily: "var(--font-serif)",
+              }}
+            >
+              {bid ? bid : statusText}
+            </span>
+          )}
         </div>
       </div>
     );
@@ -187,7 +241,7 @@ export function PlayerBadge(props: PlayerBadgeProps) {
         }}
       >
         <div style={{ position: "relative" }}>
-          <Avatar name={name} size={36} team={team} active={active} />
+          <Avatar name={name} size={36} team={team} active={active} disconnected={disconnected} />
           {team === "napo" && <NapoChip />}
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -201,15 +255,19 @@ export function PlayerBadge(props: PlayerBadgeProps) {
           >
             {name}
           </span>
-          <span
-            style={{
-              fontSize: 10,
-              color: "var(--text-secondary)",
-              fontFamily: "var(--font-serif)",
-            }}
-          >
-            {bid ? bid : statusText}
-          </span>
+          {disconnected && disconnectedSinceMs !== undefined ? (
+            <DisconnectedBadge sinceMs={disconnectedSinceMs} />
+          ) : (
+            <span
+              style={{
+                fontSize: 10,
+                color: "var(--text-secondary)",
+                fontFamily: "var(--font-serif)",
+              }}
+            >
+              {bid ? bid : statusText}
+            </span>
+          )}
         </div>
       </div>
     );

@@ -12,7 +12,7 @@
 import type { CSSProperties } from "react";
 import { belongsToLead, type SuitKey, SUITS, parseCard } from "./card-shared";
 import { Suit, TrumpCard } from "./Card";
-import { Avatar } from "./Player";
+import { Avatar, DisconnectedBadge } from "./Player";
 import type { GamePcViewModel } from "./GamePC";
 
 export interface GameMobileProps {
@@ -362,7 +362,7 @@ function PlayersRow({ vm }: { vm: GamePcViewModel }) {
           }}
         >
           <div style={{ position: "relative" }}>
-            <Avatar name={o.name} size={32} />
+            <Avatar name={o.name} size={32} disconnected={o.disconnected} />
             {o.isNapo && <SmallCrown />}
             {o.isPartner && <SmallPartnerChip />}
           </div>
@@ -379,6 +379,9 @@ function PlayersRow({ vm }: { vm: GamePcViewModel }) {
           >
             {o.name}
           </span>
+          {o.disconnected && o.disconnectedSinceMs !== undefined && (
+            <DisconnectedBadge sinceMs={o.disconnectedSinceMs} />
+          )}
           {o.total !== undefined && (
             <span
               style={{

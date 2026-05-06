@@ -72,6 +72,8 @@ export interface SelectInput {
   hands_per_match: number | null;
   /** 局番号(0-based の hand_index)。0..hands_per_match-1。 */
   handIndex: number | null;
+  /** seat → 切断時刻 (ms epoch)。store.disconnectedSeats を渡す。 */
+  disconnectedSeats?: Map<number, number>;
 }
 
 /**
@@ -79,7 +81,7 @@ export interface SelectInput {
  * Bidding 中で declarer/bid 等が無い場合も partial で OK(BidOverlay 側で対応)。
  */
 export function selectGameVm(input: SelectInput): GamePcViewModel | null {
-  const { observation, seats, mySeat, hands_per_match, handIndex } = input;
+  const { observation, seats, mySeat, hands_per_match, handIndex, disconnectedSeats } = input;
   if (!observation || !seats || mySeat === null) return null;
 
   const seatToName = new Map<number, string>();
@@ -95,6 +97,7 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
     const seat = (mySeat + off) % observation.num_players;
     const pos = cornerForOffset(off);
     const isBack = pos === "tl" || pos === "tr";
+    const since = disconnectedSeats?.get(seat);
     opponents.push({
       name: nameOf(seat),
       pos,
@@ -105,6 +108,8 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
       captured: captured[seat] ?? [],
       isNapo: observation.declarer === seat,
       isPartner: adjSeat === seat,
+      disconnected: since !== undefined,
+      disconnectedSinceMs: since,
     });
   }
 
