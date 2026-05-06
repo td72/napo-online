@@ -54,8 +54,6 @@ export interface PlayerBadgeProps {
   name: string;
   /** 状態テキスト。空文字で非表示。 */
   status?: PlayerStatus;
-  /** 残り手札枚数。 */
-  count?: number;
   /** 'napo' = ナポ陣営、'army' = 連合軍。avatar の枠色と王冠マークに反映。 */
   team?: Team;
   /** active = ターン中。avatar に halo を出して pulse させる。 */
@@ -78,7 +76,6 @@ export function PlayerBadge(props: PlayerBadgeProps) {
   const {
     name,
     status = "",
-    count,
     team = null,
     active = false,
     compact,
@@ -169,7 +166,7 @@ export function PlayerBadge(props: PlayerBadgeProps) {
               fontFamily: "var(--font-serif)",
             }}
           >
-            {bid ? bid : count !== undefined ? `${count}枚 · ${statusText}` : statusText}
+            {bid ? bid : statusText}
           </span>
         </div>
       </div>
@@ -211,7 +208,7 @@ export function PlayerBadge(props: PlayerBadgeProps) {
               fontFamily: "var(--font-serif)",
             }}
           >
-            {bid ? bid : count !== undefined ? `${count}枚` : statusText}
+            {bid ? bid : statusText}
           </span>
         </div>
       </div>
@@ -252,8 +249,6 @@ export function PlayerBadge(props: PlayerBadgeProps) {
           >
             {bid}
           </span>
-        ) : count !== undefined ? (
-          <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>手札 {count}枚</span>
         ) : (
           <span
             style={{

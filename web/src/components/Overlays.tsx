@@ -67,7 +67,9 @@ export function BidOverlay({
   onPass,
   onBid,
 }: BidOverlayProps) {
-  const tickRange = [minTricks, minTricks + 1, minTricks + 2, minTricks + 3];
+  const MAX_BID = 20;
+  const tickRange: number[] = [];
+  for (let n = minTricks; n <= MAX_BID; n++) tickRange.push(n);
   return (
     <div style={overlayBase}>
       <div
@@ -126,7 +128,7 @@ export function BidOverlay({
                 {currentTopBid.tricks}
               </span>
               {currentTopBid.trump === "NT" ? (
-                <span style={{ marginLeft: 4 }}>NT</span>
+                <span style={{ marginLeft: 4, fontSize: mobile ? 11 : 13 }}>ノートラ</span>
               ) : (
                 <Suit s={currentTopBid.trump} size={mobile ? 12 : 14} />
               )}
@@ -227,7 +229,7 @@ export function BidOverlay({
                     }}
                   >
                     {s === "NT" ? (
-                      <span style={{ fontSize: mobile ? 11 : 13 }}>NT</span>
+                      <span style={{ fontSize: mobile ? 10 : 12 }}>ノートラ</span>
                     ) : (
                       <Suit s={s} size={mobile ? 14 : 18} />
                     )}
@@ -506,7 +508,7 @@ export function PartnerOverlay({ mobile, declarerName, picker }: PartnerOverlayP
                 cursor: picker.selectedCard === null ? "not-allowed" : "pointer",
               }}
             >
-              {picker.selectedCard ? `${picker.selectedCard} を指名` : "カードを選択"}
+              副官を指名
             </button>
           ) : (
             <div

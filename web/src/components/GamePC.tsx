@@ -263,7 +263,7 @@ function TopBar({ vm }: { vm: GamePcViewModel }) {
             }}
           >
             {vm.isNoTrump ? (
-              <span style={{ fontSize: 14 }}>NT</span>
+              <span style={{ fontSize: 13 }}>ノートラ</span>
             ) : (
               <Suit s={vm.trumpSuit} size={18} />
             )}
@@ -406,7 +406,6 @@ function CornerOpponent({
       <PlayerBadge
         name={name}
         status={status}
-        count={cards}
         total={total}
         isNapo={isNapo}
         isPartner={isPartner}

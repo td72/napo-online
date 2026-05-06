@@ -284,7 +284,7 @@ function GameStage() {
     hands_per_match,
     handIndex,
   });
-  const overlay = selectOverlayPhase(observation);
+  const overlay = selectOverlayPhase(observation, events);
   const myName = mySeatName({ seats, mySeat, myEmail });
 
   if (!vm || !observation || mySeat === null) {
@@ -961,11 +961,11 @@ function ComponentGallery() {
             paddingTop: 14,
           }}
         >
-          <PlayerBadge name="ハル" status="thinking" count={7} active />
-          <PlayerBadge name="ナギ" status="played" count={6} team="napo" isNapo bid="13♠" />
-          <PlayerBadge name="リオ" status="pass" count={7} team="army" />
-          <PlayerBadge name="ミナト" count={5} team="napo" isPartner />
-          <PlayerBadge name="アオイ" status="waiting" count={7} total={-3} />
+          <PlayerBadge name="ハル" status="thinking" active />
+          <PlayerBadge name="ナギ" status="played" team="napo" isNapo bid="13♠" />
+          <PlayerBadge name="リオ" status="pass" team="army" />
+          <PlayerBadge name="ミナト" team="napo" isPartner />
+          <PlayerBadge name="アオイ" status="waiting" total={-3} />
         </div>
         <div
           style={{
@@ -978,7 +978,7 @@ function ComponentGallery() {
           }}
         >
           <PlayerBadge name="ハル" compact horizontal active total={5} bid="13♠" isNapo />
-          <PlayerBadge name="ナギ" compact horizontal align="right" total={-2} count={6} />
+          <PlayerBadge name="ナギ" compact horizontal align="right" total={-2} />
         </div>
       </section>
     </>
