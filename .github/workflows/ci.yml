@@ -35,3 +35,27 @@ jobs:
       - uses: jdx/mise-action@v4
       - uses: Swatinem/rust-cache@v2
       - run: mise run test
+
+  web:
+    name: web (vite+ check + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+      # vp は ~/.vite-plus/bin に curl install。CI でも同様に入れる。
+      - name: install vite-plus (vp)
+        run: |
+          curl -fsSL https://vite.plus | bash
+          echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
+      - name: pnpm install (web/)
+        working-directory: web
+        run: vp install
+      - run: mise run web:check
+      - run: mise run web:build
+      - name: upload web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: static/dist
+          if-no-files-found: error
+          retention-days: 7

@@ -11,8 +11,12 @@ node = "lts"
 _.path = ["~/.vite-plus/bin"]
 
 [tasks.dev]
-description = "Run server with DEV_MODE (no CF Access required)"
+description = "Run server with DEV_MODE (no CF Access). 別途 `mise run web:dev` で Vite dev も起動する想定"
 run = "NAPO_DEV_MODE=true NAPO_DB=./napo.db cargo run"
+
+[tasks."dev:integrated"]
+description = "Web を build → Rust 側に NAPO_STATIC=./static/dist で配信させる(本番に近い形でローカル確認)"
+run = ["mise run web:build", "NAPO_DEV_MODE=true NAPO_DB=./napo.db NAPO_STATIC=./static/dist cargo run"]
 
 [tasks.test]
 description = "Run all tests (lib + integration + examples)"
