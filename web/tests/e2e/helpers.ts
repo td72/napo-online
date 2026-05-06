@@ -250,3 +250,38 @@ export async function playUntilHandEnd(users: User[]): Promise<void> {
     await expect(u.page.getByTestId("overlay-end")).toBeVisible({ timeout: 10_000 });
   }
 }
+
+/**
+ * 1 局を bid → adjutant → widow → 10 trick → end overlay まで通す。
+ * declarerIndex を渡すと毎局その user が立つ(他はパス)。
+ */
+export async function playOneHand(users: User[], declarerIndex: number): Promise<void> {
+  await autoBid(users, declarerIndex, { tricks: 13, trump: "S" });
+  await autoAdjutant(users[declarerIndex].page);
+  await autoWidow(users[declarerIndex].page, 2);
+  await playUntilHandEnd(users);
+}
+
+/**
+ * 全員が EndOverlay の "次のゲームへ" ボタンを押す(server 側 next_ready 投票の
+ * 全員到達で次局が開始される)。matchEnded=true なら何もしない。
+ */
+export async function clickNextHand(users: User[]): Promise<void> {
+  const matchEnded = await users[0].page
+    .getByTestId("overlay-end")
+    .getAttribute("data-match-ended");
+  if (matchEnded === "true") {
+    console.log("[clickNextHand] match ended, skip");
+    return;
+  }
+  for (const u of users) {
+    console.log(`[clickNextHand] ${u.name} clicks btn-next-hand`);
+    await u.page.getByTestId("btn-next-hand").click();
+  }
+  // 次の局の bid overlay が来るまで待つ
+  console.log("[clickNextHand] waiting for overlay-bid on all users");
+  for (const u of users) {
+    await expect(u.page.getByTestId("overlay-bid")).toBeVisible({ timeout: 15_000 });
+  }
+  console.log("[clickNextHand] overlay-bid visible everywhere");
+}

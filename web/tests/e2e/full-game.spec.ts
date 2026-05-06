@@ -40,7 +40,8 @@ test.describe("napo-online full game flow", () => {
       const napoWon = await endStage.getAttribute("data-napo-won");
       expect(napoWon === "true" || napoWon === "false").toBe(true);
       expect(await endStage.getAttribute("data-current-game")).toBe("1");
-      expect(await endStage.getAttribute("data-total-games")).toBe("10");
+      // playwright.config.ts で NAPO_HANDS_PER_MATCH=3 に設定されている
+      expect(await endStage.getAttribute("data-total-games")).toBe("3");
       // 全員に同じ overlay が出ているか
       for (const u of users) {
         await expect(u.page.getByTestId("overlay-end")).toBeVisible();

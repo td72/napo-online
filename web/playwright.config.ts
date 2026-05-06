@@ -38,6 +38,8 @@ export default defineConfig({
       NAPO_DEV_MODE: "true",
       // テスト専用 DB(消えても OK)
       NAPO_DB: "/tmp/napo-e2e.db",
+      // e2e は 3 局/match に短縮(本番は 10 局)。Match 完走 spec のターンアラウンドを抑える。
+      NAPO_HANDS_PER_MATCH: "3",
     },
   },
 });

@@ -165,13 +165,16 @@ export function mySeatName(input: Pick<SelectInput, "seats" | "mySeat" | "myEmai
 /**
  * observation から overlay phase を推定。
  * - declarer 未確定 → "bid"
- * - declarer 決定、adjutant_declared event 未着 → "partner"
+ * - declarer 決定、adjutant_declared event(現局)未着 → "partner"
  * - adjutant_declared 後、visible_widow が見えている(declarer 視点)→ "widow"
  * - それ以外 → null(通常 play 中、または非 declarer の widow 待ち)
  *
  * 注: 非 declarer の observation.adjutant_card は declarer がカードを公開する
  * (= adjutant_player が確定する)まで常に null。adjutant_card だけ見ると
  * WidowExchange phase でも "partner" と誤判定されるので、events で補完する。
+ *
+ * events array は match 全体で蓄積されるので、hand またぎで誤判定しないよう
+ * 最新 hand_started 以降の event だけ見る。
  */
 export function selectOverlayPhase(
   obs: WireObservation | null,
@@ -180,11 +183,25 @@ export function selectOverlayPhase(
   if (!obs) return null;
   if (obs.declarer === null) return "bid";
 
-  const adjutantDeclared = events.some((e) => e.type === "adjutant_declared");
+  const eventsThisHand = eventsAfterLastHandStart(events);
+  const adjutantDeclared = eventsThisHand.some((e) => e.type === "adjutant_declared");
   if (!adjutantDeclared) return "partner";
 
   if (obs.visible_widow !== null) return "widow";
   return null;
+}
+
+/** events から最後の hand_started 以降の event だけを切り出す。 */
+function eventsAfterLastHandStart(events: PublicEvent[]): PublicEvent[] {
+  let lastIdx = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].type === "hand_started") {
+      lastIdx = i;
+      break;
+    }
+  }
+  if (lastIdx < 0) return events;
+  return events.slice(lastIdx);
 }
 
 /** events から最新の hand_started.hand_index を返す(配信されてなければ null)。 */
