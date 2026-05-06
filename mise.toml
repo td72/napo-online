@@ -53,7 +53,8 @@ run = "NAPO_DEV_MODE=true NAPO_DB=./napo.db cargo run"
 [tasks."dev:integrated"]
 description = "Web を build → Rust が NAPO_STATIC=./static/dist で配信(本番に近い形)"
 depends = ["web:build"]
-run = "NAPO_DEV_MODE=true NAPO_DB=./napo.db NAPO_STATIC=./static/dist cargo run"
+# 呼び出し側(e.g. playwright webServer)が NAPO_DB を上書きできるよう ${VAR:-default} を使う。
+run = "NAPO_DEV_MODE=true NAPO_DB=${NAPO_DB:-./napo.db} NAPO_STATIC=${NAPO_STATIC:-./static/dist} cargo run"
 
 # ------------------------------------------------------------------------------
 # Web (Vite+ + React) は web/ で実行

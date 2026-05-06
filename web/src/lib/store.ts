@@ -163,18 +163,46 @@ function handleServerMessage(
           if (j?.handle) set({ myHandle: j.handle });
         })
         .catch(() => {});
+      // 切断 → 再接続時、サーバが「お前まだこの部屋にいるよ」と返してくる。自動で
+      // JoinRoom して復帰する(member 既存なら on_join 側で observation を再送)。
+      if (msg.payload.current_room) {
+        socket?.send({
+          type: "join_room",
+          payload: { room_id: msg.payload.current_room },
+        });
+      }
       break;
 
     case "room_state": {
-      set({ room: msg.payload.state, roomId: msg.payload.state.room_id });
+      const view = msg.payload.state;
+      set({ room: view, roomId: view.room_id });
       // suspended seat 表示はサーバの player.online から推測(suspended = !online)
       const offlineSeats = new Map<number, number>();
-      for (const p of msg.payload.state.players as PlayerView[]) {
+      for (const p of view.players as PlayerView[]) {
         if (!p.online && p.seat !== null && p.seat !== undefined) {
           offlineSeats.set(p.seat, Date.now());
         }
       }
       set({ disconnectedSeats: offlineSeats });
+      // 再接続時、match_started は再送されないので room_state.players から seats と
+      // mySeat を再構築する(初回 match_started がまだなら不正値だが、その場合
+      // seat==null なので空配列になる)。
+      const me = get().myEmail;
+      const seatedPlayers = (view.players as PlayerView[])
+        .filter((p): p is PlayerView & { seat: number } => p.seat !== null && p.seat !== undefined)
+        .sort((a, b) => a.seat - b.seat);
+      if (seatedPlayers.length > 0) {
+        const derivedSeats = seatedPlayers.map((p) => ({
+          seat: p.seat,
+          player_id: p.player_id,
+          display_name: p.display_name,
+        }));
+        const myDerivedSeat = seatedPlayers.find((p) => p.player_id === me)?.seat ?? null;
+        set((s) => ({
+          seats: s.seats ?? derivedSeats,
+          mySeat: s.mySeat ?? myDerivedSeat,
+        }));
+      }
       break;
     }
 

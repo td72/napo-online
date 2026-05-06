@@ -16,11 +16,9 @@ import {
 } from "./helpers";
 
 test.describe("reconnection (issue #2)", () => {
-  test.fixme("WidowExchange 中に 1 人切断 → 再接続で observation が反映される", async ({
-    browser,
-  }) => {
+  test("WidowExchange 中に 1 人切断 → 再接続で observation が反映される", async ({ browser }) => {
     test.setTimeout(120_000);
-    const users = await spawnFiveUsers(browser);
+    const users = await spawnFiveUsers(browser, "reconnect");
     try {
       await createRoomAndJoinAll(users);
       await startMatch(users);

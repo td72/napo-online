@@ -5,7 +5,18 @@ import type { SeatAssignment } from "./SeatAssignment";
 import type { WireObservation } from "./WireObservation";
 
 export type ServerMessage =
-  | { type: "welcome"; payload: { player_id: string; server_version: string } }
+  | {
+      type: "welcome";
+      payload: {
+        player_id: string;
+        server_version: string;
+        /**
+         * 接続者がまだ参加中の room がある場合の room_id。
+         * 切断 → 再接続時、client はこれを見て自動で JoinRoom を送って復帰する。
+         */
+        current_room?: string | null;
+      };
+    }
   | { type: "room_state"; payload: { state: RoomView } }
   | { type: "error"; payload: { code: string; message: string } }
   | { type: "pong" }

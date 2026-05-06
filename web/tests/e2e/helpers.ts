@@ -23,20 +23,27 @@ export interface User {
 }
 
 const NAMES = ["alice", "bob", "charlie", "dave", "eve"] as const;
-export const FIVE_USERS = NAMES.map((n) => ({ name: n, email: `${n}@local` }));
 
-/** 5 user を browser から起こして接続まで済ませる。先頭が host(部屋作成側)。 */
-export async function spawnFiveUsers(browser: Browser): Promise<User[]> {
+/**
+ * 5 user を browser から起こして接続まで済ませる。先頭が host(部屋作成側)。
+ *
+ * `tag` を指定すると dev_email を `${name}-${tag}@local` にしてテスト間で衝突しない。
+ * webServer は spec 間で再利用される(reuseExistingServer)ので、Welcome.current_room
+ * から auto-rejoin される pollution を避けるために必須。
+ */
+export async function spawnFiveUsers(browser: Browser, tag = "default"): Promise<User[]> {
+  const suffix = tag === "default" ? "" : `-${tag}`;
   const users: User[] = [];
-  for (const u of FIVE_USERS) {
+  for (const name of NAMES) {
+    const email = `${name}${suffix}@local`;
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto("/");
-    await page.getByTestId("input-display-name").fill(u.name);
-    await page.getByTestId("input-dev-email").fill(u.email);
+    await page.getByTestId("input-display-name").fill(name);
+    await page.getByTestId("input-dev-email").fill(email);
     await page.getByTestId("btn-connect").click();
     await expect(page.getByTestId("panel-lobby")).toBeVisible();
-    users.push({ ...u, context, page });
+    users.push({ name, email, context, page });
   }
   return users;
 }

@@ -71,6 +71,10 @@ pub enum ServerMessage {
     Welcome {
         player_id: PlayerId,
         server_version: String,
+        /// 接続者がまだ参加中の room がある場合の room_id。
+        /// 切断 → 再接続時、client はこれを見て自動で JoinRoom を送って復帰する。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        current_room: Option<RoomId>,
     },
     RoomState {
         state: RoomView,
@@ -285,6 +289,7 @@ mod tests {
         let m = ServerMessage::Welcome {
             player_id: "alice@example.com".into(),
             server_version: "0.1.0".into(),
+            current_room: None,
         };
         let s = serde_json::to_string(&m).unwrap();
         let back: ServerMessage = serde_json::from_str(&s).unwrap();

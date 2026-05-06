@@ -90,9 +90,18 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
 
     let (msg_tx, mut msg_rx) = mpsc::channel::<ServerMessage>(OUTBOUND_BUFFER);
 
+    // 切断 → 再接続時に自動で部屋に復帰できるよう、snapshot に member として残っている
+    // 部屋を探して welcome に同梱する。
+    let current_room = state
+        .db
+        .find_room_for_member(&claims.email)
+        .await
+        .ok()
+        .flatten();
     let welcome = ServerMessage::Welcome {
         player_id: claims.email.clone(),
         server_version: env!("CARGO_PKG_VERSION").to_string(),
+        current_room,
     };
     if send(&mut socket, &welcome).await.is_err() {
         return;

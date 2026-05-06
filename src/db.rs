@@ -244,6 +244,29 @@ impl Db {
         .await?
     }
 
+    /// 指定 email を members に含む最初の room_id を返す。再接続時の自動復帰に使う。
+    /// snapshot JSON 内を SQLite の json_each で走査して引き当てる(N が小さければ十分高速)。
+    pub async fn find_room_for_member(&self, email: &str) -> Result<Option<String>> {
+        let conn = self.conn.clone();
+        let email = email.to_string();
+        tokio::task::spawn_blocking(move || -> Result<Option<String>> {
+            let conn = conn.lock().expect("db poisoned");
+            conn.query_row(
+                r#"
+                SELECT s.room_id
+                FROM room_snapshots s, json_each(json_extract(s.snapshot_json, '$.members')) m
+                WHERE json_extract(m.value, '$.player_id') = ?1
+                LIMIT 1
+                "#,
+                params![email],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(Into::into)
+        })
+        .await?
+    }
+
     pub async fn list_room_snapshot_ids(&self) -> Result<Vec<String>> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<Vec<String>> {

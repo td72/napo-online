@@ -15,7 +15,7 @@ test.describe("napo-online full game flow", () => {
     browser,
   }) => {
     test.setTimeout(180_000);
-    const users = await spawnFiveUsers(browser);
+    const users = await spawnFiveUsers(browser, "fullgame");
     try {
       await createRoomAndJoinAll(users);
       await startMatch(users);
