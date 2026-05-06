@@ -23,20 +23,20 @@ export function trumpSuitFromCode(s: string): SuitKey | null {
 
 /** 自分(mySeat)を中心に、(mySeat+offset)%num を tl/tr/bl/br に割り当てる。 */
 function cornerForOffset(offset: number): CornerPos {
-  // 自分は bottom 中央。時計回りで:
-  //   +1 → 右隣(手前右)= br
-  //   +2 → 向かい右(奥右)= tr
-  //   +3 → 向かい左(奥左)= tl
-  //   +4 → 左隣(手前左)= bl
+  // 自分は bottom 中央。テーブル俯瞰視点で時計回り(自分→左隣→対面左→対面右→右隣):
+  //   +1 → 左隣(手前左)= bl
+  //   +2 → 向かい左(奥左)= tl
+  //   +3 → 向かい右(奥右)= tr
+  //   +4 → 右隣(手前右)= br
   switch (offset) {
     case 1:
-      return "br";
-    case 2:
-      return "tr";
-    case 3:
-      return "tl";
-    case 4:
       return "bl";
+    case 2:
+      return "tl";
+    case 3:
+      return "tr";
+    case 4:
+      return "br";
     default:
       throw new Error(`invalid seat offset ${offset}`);
   }
@@ -159,14 +159,24 @@ export function mySeatName(input: Pick<SelectInput, "seats" | "mySeat" | "myEmai
 /**
  * observation から overlay phase を推定。
  * - declarer 未確定 → "bid"
- * - declarer 決定 + adjutant_card 未確定 → "partner"
- * - adjutant_card 決定 + visible_widow が見えている(declarer 視点)→ "widow"
- * - それ以外 → null(通常 play 中)
+ * - declarer 決定、adjutant_declared event 未着 → "partner"
+ * - adjutant_declared 後、visible_widow が見えている(declarer 視点)→ "widow"
+ * - それ以外 → null(通常 play 中、または非 declarer の widow 待ち)
+ *
+ * 注: 非 declarer の observation.adjutant_card は declarer がカードを公開する
+ * (= adjutant_player が確定する)まで常に null。adjutant_card だけ見ると
+ * WidowExchange phase でも "partner" と誤判定されるので、events で補完する。
  */
-export function selectOverlayPhase(obs: WireObservation | null): OverlayPhase {
+export function selectOverlayPhase(
+  obs: WireObservation | null,
+  events: PublicEvent[] = [],
+): OverlayPhase {
   if (!obs) return null;
   if (obs.declarer === null) return "bid";
-  if (obs.adjutant_card === null) return "partner";
+
+  const adjutantDeclared = events.some((e) => e.type === "adjutant_declared");
+  if (!adjutantDeclared) return "partner";
+
   if (obs.visible_widow !== null) return "widow";
   return null;
 }

@@ -220,7 +220,7 @@ export function GameMobile({
               {vm.bidValue}
             </span>
             {vm.isNoTrump ? (
-              <span style={{ fontSize: 11 }}>NT</span>
+              <span style={{ fontSize: 10 }}>ノートラ</span>
             ) : (
               <Suit s={vm.trumpSuit} size={11} />
             )}
@@ -310,7 +310,7 @@ function TopBar({ vm }: { vm: GamePcViewModel }) {
           </span>
           <span style={{ color: "var(--text-muted)" }}>·</span>
           {vm.isNoTrump ? (
-            <span style={{ fontSize: 12 }}>NT</span>
+            <span style={{ fontSize: 11 }}>ノートラ</span>
           ) : (
             <Suit s={vm.trumpSuit} size={14} />
           )}
@@ -347,41 +347,56 @@ function PlayersRow({ vm }: { vm: GamePcViewModel }) {
       {vm.opponents.map((o) => (
         <div
           key={o.name}
-          style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 3,
+            minWidth: 0,
+            flex: "1 1 0",
+            maxWidth: 90,
+          }}
         >
           <div style={{ position: "relative" }}>
             <Avatar name={o.name} size={32} />
             {o.isNapo && <SmallCrown />}
             {o.isPartner && <SmallPartnerChip />}
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-            <span style={{ fontSize: 11, color: "var(--text-primary)", fontWeight: 600 }}>
-              {o.name}
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--text-primary)",
+              fontWeight: 600,
+              maxWidth: "100%",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {o.name}
+          </span>
+          {o.total !== undefined && (
+            <span
+              style={{
+                fontSize: 9,
+                fontFamily: "var(--font-serif)",
+                color:
+                  o.total > 0
+                    ? "var(--accent-success)"
+                    : o.total < 0
+                      ? "var(--accent-primary)"
+                      : "var(--text-muted)",
+                fontWeight: 600,
+                background: "var(--bg-secondary)",
+                padding: "0 3px",
+                borderRadius: 2,
+                lineHeight: 1.5,
+              }}
+            >
+              {o.total > 0 ? "+" : ""}
+              {o.total}
             </span>
-            {o.total !== undefined && (
-              <span
-                style={{
-                  fontSize: 9,
-                  fontFamily: "var(--font-serif)",
-                  color:
-                    o.total > 0
-                      ? "var(--accent-success)"
-                      : o.total < 0
-                        ? "var(--accent-primary)"
-                        : "var(--text-muted)",
-                  fontWeight: 600,
-                  background: "var(--bg-secondary)",
-                  padding: "0 3px",
-                  borderRadius: 2,
-                  lineHeight: 1.5,
-                }}
-              >
-                {o.total > 0 ? "+" : ""}
-                {o.total}
-              </span>
-            )}
-          </div>
-          <span style={{ fontSize: 9, color: "var(--text-muted)" }}>{o.cards}枚</span>
+          )}
           <CapturedPileMini cards={o.captured} />
         </div>
       ))}
@@ -526,12 +541,15 @@ function Field({ vm }: { vm: GamePcViewModel }) {
           <div
             style={{
               position: "absolute",
-              bottom: -12,
+              bottom: -14,
               left: "50%",
-              transform: `translateX(-50%) rotate(${p.rot}deg)`,
+              transform: "translateX(-50%)",
               fontSize: 9,
               color: "var(--text-secondary)",
               whiteSpace: "nowrap",
+              maxWidth: 56,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
             }}
           >
             {p.player}
