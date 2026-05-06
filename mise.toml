@@ -93,6 +93,16 @@ run = "vp test"
 description = "src/protocol.rs から TS 型を web/src/types/ に再生成"
 run = "cargo test --lib export_bindings --quiet"
 
+[tasks."web:e2e"]
+description = "Playwright で 5 player E2E。webServer 機能で Rust server を自動起動"
+dir = "web"
+run = "pnpm exec playwright test"
+
+[tasks."web:e2e:ui"]
+description = "Playwright UI mode(対話デバッグ)"
+dir = "web"
+run = "pnpm exec playwright test --ui"
+
 # ------------------------------------------------------------------------------
 # Release build(musl static-pie)
 # ------------------------------------------------------------------------------

@@ -71,7 +71,7 @@ export function BidOverlay({
   const tickRange: number[] = [];
   for (let n = minTricks; n <= MAX_BID; n++) tickRange.push(n);
   return (
-    <div style={overlayBase}>
+    <div style={overlayBase} data-testid="overlay-bid" data-my-turn={myTurn ? "true" : "false"}>
       <div
         style={{
           position: "absolute",
@@ -203,6 +203,7 @@ export function BidOverlay({
                     type="button"
                     key={n}
                     onClick={() => onSelectTricks(n)}
+                    data-testid={`bid-tricks-${n}`}
                     style={{
                       ...pillBtn,
                       padding: mobile ? "4px 8px" : "6px 12px",
@@ -221,6 +222,7 @@ export function BidOverlay({
                     type="button"
                     key={s}
                     onClick={() => onSelectTrump(s)}
+                    data-testid={`bid-trump-${s}`}
                     style={{
                       ...pillBtn,
                       padding: mobile ? "4px 6px" : "6px 8px",
@@ -239,6 +241,7 @@ export function BidOverlay({
                 <button
                   type="button"
                   onClick={onPass}
+                  data-testid="btn-pass"
                   style={{
                     ...pillBtn,
                     padding: mobile ? "4px 10px" : "6px 14px",
@@ -252,6 +255,7 @@ export function BidOverlay({
                 <button
                   type="button"
                   onClick={onBid}
+                  data-testid="btn-bid"
                   style={{
                     ...primaryBtn,
                     padding: mobile ? "5px 10px" : "6px 16px",
@@ -393,7 +397,7 @@ const RANKS_DESC = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3",
 export function PartnerOverlay({ mobile, declarerName, picker }: PartnerOverlayProps) {
   const isPicker = picker !== undefined;
   return (
-    <div style={overlayBase}>
+    <div style={overlayBase} data-testid="overlay-partner" data-mode={isPicker ? "picker" : "wait"}>
       <div
         style={{
           position: "absolute",
@@ -461,6 +465,7 @@ export function PartnerOverlay({ mobile, declarerName, picker }: PartnerOverlayP
                 return (
                   <div
                     key={r}
+                    data-testid={isPicker ? `adj-card-${code}` : undefined}
                     style={{
                       cursor: isPicker ? "pointer" : "default",
                       filter: isPicker
@@ -500,6 +505,7 @@ export function PartnerOverlay({ mobile, declarerName, picker }: PartnerOverlayP
               type="button"
               onClick={picker.onConfirm}
               disabled={picker.selectedCard === null}
+              data-testid="btn-confirm-adjutant"
               style={{
                 ...primaryBtn,
                 padding: mobile ? "8px 18px" : "10px 22px",
@@ -567,7 +573,7 @@ export function WidowOverlay({ mobile, widow, hand, discardCount, onConfirm }: W
   const cardW = mobile ? 38 : 56;
   const cardH = mobile ? 54 : 80;
   return (
-    <div style={overlayBase}>
+    <div style={overlayBase} data-testid="overlay-widow">
       <div
         style={{
           position: "absolute",
@@ -665,6 +671,7 @@ export function WidowOverlay({ mobile, widow, hand, discardCount, onConfirm }: W
             type="button"
             onClick={() => onConfirm(selected)}
             disabled={!ready}
+            data-testid="btn-confirm-widow"
             style={{
               ...primaryBtn,
               padding: mobile ? "8px 18px" : "10px 22px",
@@ -719,6 +726,8 @@ function CardRow({
           return (
             <div
               key={`${c}-${i}`}
+              data-testid={`widow-card-${c}`}
+              data-discarded={isDiscard ? "true" : "false"}
               style={{ position: "relative", cursor: "pointer" }}
               onClick={() => onToggle(c)}
             >
@@ -777,7 +786,12 @@ export function TrickResultOverlay({
   cards,
 }: TrickResultOverlayProps) {
   return (
-    <div style={overlayBase}>
+    <div
+      style={overlayBase}
+      data-testid="overlay-trick-result"
+      data-trick-index={trickIndex}
+      data-winner={winnerName}
+    >
       <div
         style={{
           position: "absolute",
@@ -914,7 +928,14 @@ export function EndOverlay({
 }: EndOverlayProps) {
   const sorted = [...standings].sort((a, b) => b.total - a.total);
   return (
-    <div style={overlayBase}>
+    <div
+      style={overlayBase}
+      data-testid="overlay-end"
+      data-napo-won={napoWon ? "true" : "false"}
+      data-current-game={currentGame}
+      data-total-games={totalGames}
+      data-match-ended={matchEnded ? "true" : "false"}
+    >
       <div
         style={{
           position: "absolute",
@@ -1066,6 +1087,7 @@ export function EndOverlay({
             <button
               type="button"
               onClick={onNext}
+              data-testid="btn-next-hand"
               style={{
                 ...primaryBtn,
                 padding: mobile ? "10px 22px" : "12px 28px",

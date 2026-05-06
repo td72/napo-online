@@ -32,6 +32,50 @@ export function isBottomHalf(y: number): boolean {
   return y > 0.5;
 }
 
+/**
+ * 同色 suit。trump=S→ura は同色 C、trump=H→D、など napo-core の urajack 計算に対応。
+ */
+const SAME_COLOR: Record<SuitKey, SuitKey> = { S: "C", C: "S", H: "D", D: "H" };
+
+/**
+ * 切り札スートと裏 J ルールを考慮した「lead suit」を返す。NT trump や leadCard が
+ * null の場合は単純に表面 suit を返す。
+ */
+export function effectiveLeadSuit(
+  leadCard: string | undefined,
+  trumpSuit: SuitKey | null,
+  isNoTrump: boolean,
+): SuitKey | null {
+  if (!leadCard) return null;
+  const surface = leadCard[0] as SuitKey;
+  if (!SUITS[surface]) return null;
+  if (isNoTrump || !trumpSuit) return surface;
+  // sei-jack(trump 同 suit の J)/ ura-jack(同色 suit の J)→ trump suit lead 扱い
+  const seiJ = trumpSuit + "J";
+  const uraJ = SAME_COLOR[trumpSuit] + "J";
+  if (leadCard === seiJ || leadCard === uraJ) return trumpSuit;
+  return surface;
+}
+
+/**
+ * 「この card は lead suit に属するか」を裏 J ルール込みで判定。
+ * lead が S で trump=S の場合、CJ(=urajack)も S 扱い。
+ */
+export function belongsToLead(
+  card: string,
+  leadSuit: SuitKey,
+  trumpSuit: SuitKey | null,
+  isNoTrump: boolean,
+): boolean {
+  if (card === "JK") return false;
+  const surface = card[0] as SuitKey;
+  if (isNoTrump || !trumpSuit) return surface === leadSuit;
+  const seiJ = trumpSuit + "J";
+  const uraJ = SAME_COLOR[trumpSuit] + "J";
+  if (card === seiJ || card === uraJ) return leadSuit === trumpSuit;
+  return surface === leadSuit;
+}
+
 /** pip 配置 — 0..1 の (column, row) 座標。 */
 export type PipLayout = ReadonlyArray<readonly [number, number]>;
 

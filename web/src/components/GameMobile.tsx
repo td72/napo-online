@@ -10,7 +10,7 @@
 // GamePC と同じ GamePcViewModel を再利用(共通の vm)。
 
 import type { CSSProperties } from "react";
-import { type SuitKey, SUITS, parseCard } from "./card-shared";
+import { belongsToLead, type SuitKey, SUITS, parseCard } from "./card-shared";
 import { Suit, TrumpCard } from "./Card";
 import { Avatar } from "./Player";
 import type { GamePcViewModel } from "./GamePC";
@@ -87,10 +87,14 @@ export function GameMobile({
           const offset = i - (n - 1) / 2;
           const rot = offset * 5;
           const ty = Math.abs(offset) * 3;
-          const { suit } = parseCard(code);
+          const trumpSuitOrNull = vm.isNoTrump ? null : vm.trumpSuit;
           const hasLead =
-            vm.leadSuit !== null && vm.myHand.some((c) => parseCard(c).suit === vm.leadSuit);
-          const followable = !hasLead || suit === vm.leadSuit;
+            vm.leadSuit !== null &&
+            vm.myHand.some((c) => belongsToLead(c, vm.leadSuit!, trumpSuitOrNull, vm.isNoTrump));
+          const followable =
+            !hasLead ||
+            (vm.leadSuit !== null &&
+              belongsToLead(code, vm.leadSuit, trumpSuitOrNull, vm.isNoTrump));
           const playable = vm.phase === "turn" && followable;
           const isHl = code === "SA" ? "mighty" : code === "HJ" ? "jack" : null;
           return (
