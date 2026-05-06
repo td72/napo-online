@@ -82,7 +82,9 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
       - name: install Playwright browsers
         working-directory: web
-        run: pnpm exec playwright install --with-deps chromium
+        # vp install で web/node_modules に @playwright/test が入るので、bin を直叩き。
+        # vp は pnpm を内部管理しており PATH に pnpm を露出しないため `pnpm exec` は使えない。
+        run: node_modules/.bin/playwright install --with-deps chromium
       # webServer config が `mise run dev:integrated`(web build + cargo run)を起動して
       # /healthz を待つ。テスト終了で kill される。
       - run: mise run web:e2e
