@@ -16,10 +16,24 @@ default:
     @just --list
 
 # Web (Vite+ + React) は mise tasks を参照: `mise tasks | grep web`
+# 本ファイルでは production 配信用に web build をラップする。
 
 # ローカル開発: DEV_MODE で起動(ローカル DB は ./napo.db)
 dev:
     NAPO_DEV_MODE=true NAPO_DB=./napo.db cargo run
+
+# Web を production build → static/dist/(`mise run web:build` のラッパ)
+web-build:
+    mise run web:build
+
+# Web bundle のみ本番に転送(/opt/napo/dist/)
+deploy-web: web-build
+    rsync -avz --delete -e 'ssh -p {{port}}' static/dist/ {{host}}:/tmp/napo-dist/
+    ssh -p {{port}} {{host}} ' \
+        sudo rm -rf /opt/napo/dist && \
+        sudo mv /tmp/napo-dist /opt/napo/dist && \
+        sudo chown -R napo:napo /opt/napo/dist \
+    '
 
 # テスト
 test:
@@ -42,8 +56,19 @@ build-release:
 build-release-native:
     cargo build --release --target {{target}}
 
-# デプロイ: ビルド → scp → systemctl restart
-deploy: build-release
+# フルデプロイ: web build + binary build + 両方転送 + restart
+deploy: deploy-web build-release
+    scp -P {{port}} target/{{target}}/release/napo-online {{host}}:/tmp/
+    ssh -p {{port}} {{host}} ' \
+        sudo install -m 755 -o napo -g napo \
+            /tmp/napo-online /opt/napo/napo-online.new && \
+        sudo mv -f /opt/napo/napo-online /opt/napo/napo-online.prev 2>/dev/null || true && \
+        sudo mv /opt/napo/napo-online.new /opt/napo/napo-online && \
+        sudo systemctl restart napo \
+    '
+
+# binary だけ更新(web 変更なしのとき)
+deploy-bin: build-release
     scp -P {{port}} target/{{target}}/release/napo-online {{host}}:/tmp/
     ssh -p {{port}} {{host}} ' \
         sudo install -m 755 -o napo -g napo \
@@ -67,7 +92,7 @@ logs:
 
 # /healthz への疎通確認(本番ドメインへ)
 ping URL='https://napo.example.com/healthz':
-    curl -sS -o /dev/null -w 'HTTP %{{http_code}}\n' {{URL}}
+    curl -sS -o /dev/null -w 'HTTP %{http_code}\n' {{URL}}
 
 # DB をローカルに引いて確認
 db-pull:

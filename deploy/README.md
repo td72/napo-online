@@ -14,9 +14,9 @@ VPS デプロイ用のサンプル設定。実環境で使うときは下記の�
 # ユーザ作成
 sudo useradd --system --create-home --shell /bin/false napo
 
-# ディレクトリ
-sudo mkdir -p /opt/napo /var/lib/napo /etc/napo
-sudo chown napo:napo /opt/napo /var/lib/napo
+# ディレクトリ(/opt/napo にバイナリと static/dist の両方を置く)
+sudo mkdir -p /opt/napo /opt/napo/dist /var/lib/napo /etc/napo
+sudo chown -R napo:napo /opt/napo /var/lib/napo
 sudo chmod 750 /etc/napo
 
 # 設定ファイル配置
@@ -80,10 +80,18 @@ just build-release
 HOST=ubuntu@napo.example.com PORT=22 just deploy
 ```
 
-`deploy` レシピは `build-release` → `scp /tmp/napo-online` → ssh で
-`/opt/napo/napo-online.new` にインストール → `.prev` に旧バイナリを退避 → systemd restart。
+`deploy` は次を一気に実行する:
 
-問題があれば `just rollback` で `.prev` に戻せる。
+1. `deploy-web`: `mise run web:build` → `static/dist/` を rsync で `/opt/napo/dist/` に同期
+2. `build-release`: musl static-pie バイナリを cross build
+3. バイナリを scp → `/opt/napo/napo-online.new` に install → `.prev` に旧バイナリ退避 → `systemctl restart napo`
+
+`NAPO_STATIC=/opt/napo/dist` が `napo.env` で設定されていれば、Rust 側が
+React bundle (`/opt/napo/dist/index.html`) を fallback で配信する。
+
+- `just deploy-web` … web bundle のみ転送(バイナリは更新しない)
+- `just deploy-bin` … バイナリのみ転送(web 変更なし時)
+- `just rollback` … `.prev` に戻す(バイナリのみ。web は別途巻き戻し)
 
 ## バックアップ
 
