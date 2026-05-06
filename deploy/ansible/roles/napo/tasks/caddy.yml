@@ -1,0 +1,20 @@
+---
+- name: Ensure Caddy log dir exists
+  ansible.builtin.file:
+    path: /var/log/caddy
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: "0755"
+  # Caddy がインストールされていない場合は warn だけして続行
+  ignore_errors: true
+
+- name: Render /etc/caddy/Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: Reload caddy

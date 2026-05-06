@@ -1,0 +1,21 @@
+---
+- name: Install napo.service
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../napo.service"
+    dest: /etc/systemd/system/napo.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart napo
+
+- name: Flush handlers (so daemon-reload runs before enable/start)
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable napo (start は binary 配置後に `mise run deploy` 側で行う)
+  ansible.builtin.systemd:
+    name: napo
+    enabled: true
+    # 初回プロビジョニング時はバイナリが無いので state は触らない。
+    # `mise run deploy` の最後の systemctl restart で起動する。

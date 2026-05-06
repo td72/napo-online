@@ -1,0 +1,19 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart napo
+  ansible.builtin.systemd:
+    name: napo
+    state: restarted
+  # バイナリ未配置の段階では失敗するので、初回プロビジョニング時は ignore する。
+  # `mise run deploy` がバイナリ配置 → restart まで責任を持つので、ここでは
+  # restart 失敗を fatal にしない。
+  failed_when: false
+
+- name: Reload caddy
+  ansible.builtin.systemd:
+    name: caddy
+    state: reloaded
+  failed_when: false

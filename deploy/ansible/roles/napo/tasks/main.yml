@@ -1,0 +1,12 @@
+---
+- name: Ensure system user / dirs / permissions
+  ansible.builtin.import_tasks: system.yml
+
+- name: Configure napo.env
+  ansible.builtin.import_tasks: env.yml
+
+- name: Install systemd service
+  ansible.builtin.import_tasks: systemd.yml
+
+- name: Configure Caddy reverse proxy
+  ansible.builtin.import_tasks: caddy.yml

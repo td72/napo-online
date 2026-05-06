@@ -1,0 +1,43 @@
+# Ansible inventory。ホストごとに変数を定義。
+# secrets(CF_AUD 等)は ansible-vault で暗号化推奨。
+#   ansible-vault encrypt_string 'xxxx' --name 'napo_cf_aud'
+#
+# 使い方:
+#   ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/playbook.yml \
+#       --ask-vault-pass
+
+all:
+  hosts:
+    napo:
+      ansible_host: napo.example.com           # ← VPS のホスト名 / IP
+      ansible_user: ubuntu                     # ← SSH ログインユーザ
+      ansible_port: 22
+      # ansible_ssh_private_key_file: ~/.ssh/napo_deploy
+  vars:
+    # --- ドメイン / Caddy ---
+    napo_domain: napo.example.com              # ← 実ドメイン
+    napo_caddy_email: you@example.com          # ← Let's Encrypt 通知用
+
+    # --- Cloudflare Access ---
+    napo_cf_team: tedsum.cloudflareaccess.com  # ← CF Access team domain
+    napo_cf_aud: REPLACE_ME                    # ← CF Access App AUD(vault 推奨)
+
+    # --- 動作設定 ---
+    napo_dev_mode: false
+    napo_log: "info,napo_online=info"
+    napo_max_rooms: 64
+    napo_hands_per_match: 10
+    napo_t1_detect_ms: 60000
+    napo_t2_notify_ms: 5000
+    napo_t3_abort_ms: 300000
+    napo_t4_end_ms: 600000
+    napo_ws_max_msg_bytes: 8192
+    napo_ws_rate_limit_per_sec: 10
+
+    # --- パス(基本変えない)---
+    napo_user: napo
+    napo_install_dir: /opt/napo
+    napo_data_dir: /var/lib/napo
+    napo_config_dir: /etc/napo
+    napo_db_path: /var/lib/napo/game.db
+    napo_static_dir: /opt/napo/dist

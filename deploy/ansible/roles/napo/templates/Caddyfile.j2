@@ -1,0 +1,29 @@
+# Managed by Ansible — do not edit by hand.
+# {{ ansible_managed }}
+
+{
+    email {{ napo_caddy_email }}
+}
+
+{{ napo_domain }} {
+    encode zstd gzip
+
+    reverse_proxy 127.0.0.1:8080 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    log {
+        output file /var/log/caddy/napo.access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format json
+    }
+
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}

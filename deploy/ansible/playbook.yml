@@ -1,0 +1,9 @@
+# napo-online VPS 初回プロビジョニング。
+# バイナリ + web bundle のデプロイは `mise run deploy`(scp + systemctl restart)で行う。
+# ここでは「OS 上に napo を動かせる土台」を冪等に作る。
+
+- name: Provision napo-online host
+  hosts: napo
+  become: true
+  roles:
+    - napo

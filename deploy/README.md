@@ -7,6 +7,11 @@ VPS デプロイ用のサンプル設定。実環境で使うときは下記の�
 | `Caddyfile.example` | Caddy リバースプロキシ + HTTPS 終端 | `napo.<your-domain>` / `you@example.com` |
 | `napo.service` | systemd ユニット | (必要に応じて User/Group/パス) |
 | `napo.env.example` | 環境変数 | `NAPO_CF_TEAM` / `NAPO_CF_AUD` |
+| `ansible/` | Ansible playbook(冪等な VPS プロビジョニング)| `deploy/ansible/README.md` を参照 |
+
+**初回セットアップは Ansible 推奨。** 詳細は `deploy/ansible/README.md`。
+手動でやりたい人向けに、以下に同等の bash 手順も残してある(両者は冪等性以外
+等価)。
 
 ## 初回セットアップ(VPS 側、要 root)
 

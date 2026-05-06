@@ -1,0 +1,21 @@
+---
+- name: Create napo system user
+  ansible.builtin.user:
+    name: "{{ napo_user }}"
+    system: true
+    shell: /bin/false
+    create_home: true
+    state: present
+
+- name: Create install / data / config directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ napo_install_dir }}", owner: "{{ napo_user }}", group: "{{ napo_user }}", mode: "0755" }
+    - { path: "{{ napo_static_dir }}", owner: "{{ napo_user }}", group: "{{ napo_user }}", mode: "0755" }
+    - { path: "{{ napo_data_dir }}", owner: "{{ napo_user }}", group: "{{ napo_user }}", mode: "0755" }
+    - { path: "{{ napo_config_dir }}", owner: "root", group: "{{ napo_user }}", mode: "0750" }
