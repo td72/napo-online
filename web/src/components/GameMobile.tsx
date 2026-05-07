@@ -85,8 +85,10 @@ export function GameMobile({
         {vm.myHand.map((code, i) => {
           const n = vm.myHand.length;
           const offset = i - (n - 1) / 2;
-          const rot = offset * 5;
-          const ty = Math.abs(offset) * 3;
+          const maxAbs = (n - 1) / 2;
+          // ドーム弧: 中央が最高、両端 baseline。
+          const ty = (maxAbs - Math.abs(offset)) * 3;
+          const rot = -offset * 5;
           const trumpSuitOrNull = vm.isNoTrump ? null : vm.trumpSuit;
           const hasLead =
             vm.leadSuit !== null &&

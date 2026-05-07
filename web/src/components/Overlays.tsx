@@ -785,8 +785,6 @@ export interface EndOverlayProps {
   mobile?: boolean;
   napoTeam: TeamPlayerVM[];
   armyTeam: TeamPlayerVM[];
-  napoScore: number;
-  armyScore: number;
   /** napo 勝ちなら true、army 勝ちなら false。 */
   napoWon: boolean;
   /** 宣言値と実際取得した枚数。 */
@@ -804,8 +802,6 @@ export function EndOverlay({
   mobile,
   napoTeam,
   armyTeam,
-  napoScore,
-  armyScore,
   napoWon,
   bidValue,
   taken,
@@ -928,7 +924,6 @@ export function EndOverlay({
             team="napo"
             label="ナポレオン軍"
             players={napoTeam}
-            score={napoScore}
             won={napoWon}
             mobile={mobile}
           />
@@ -946,14 +941,7 @@ export function EndOverlay({
               vs
             </div>
           )}
-          <TeamCard
-            team="army"
-            label="連合軍"
-            players={armyTeam}
-            score={armyScore}
-            won={!napoWon}
-            mobile={mobile}
-          />
+          <TeamCard team="army" label="連合軍" players={armyTeam} won={!napoWon} mobile={mobile} />
         </div>
 
         <Standings
@@ -1168,18 +1156,17 @@ function TeamCard({
   team,
   label,
   players,
-  score,
   won,
   mobile,
 }: {
   team: "napo" | "army";
   label: string;
   players: TeamPlayerVM[];
-  score: number;
   won: boolean;
   mobile?: boolean;
 }) {
   const color = team === "napo" ? "var(--accent-primary)" : "var(--accent-secondary)";
+  const totalPicture = players.reduce((acc, p) => acc + p.picture, 0);
   return (
     <div
       style={{
@@ -1221,14 +1208,18 @@ function TeamCard({
             </span>
           )}
         </div>
-        <div
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: mobile ? 22 : 28,
-            color: "var(--text-primary)",
-          }}
-        >
-          {score}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: mobile ? 26 : 34,
+              color: "var(--text-primary)",
+              fontWeight: 600,
+            }}
+          >
+            {totalPicture}
+          </span>
+          <span style={{ fontSize: mobile ? 10 : 12, color: "var(--text-muted)" }}>絵札</span>
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1254,8 +1245,28 @@ function TeamCard({
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: mobile ? 10 : 11, color: "var(--text-muted)" }}>
-                絵札 {p.picture} · トリック {p.tricks}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 6,
+                  marginTop: 2,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "var(--font-serif)",
+                    fontSize: mobile ? 18 : 22,
+                    color: "var(--text-primary)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {p.picture}
+                </span>
+                <span style={{ fontSize: mobile ? 10 : 11, color: "var(--text-muted)" }}>絵札</span>
+                <span style={{ fontSize: mobile ? 9 : 10, color: "var(--text-muted)" }}>
+                  / トリック {p.tricks}
+                </span>
               </div>
             </div>
           </div>

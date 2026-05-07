@@ -353,6 +353,20 @@ function GameStage() {
     setSelectedIdx(null);
   };
 
+  // 選択済みカードを再 click したらそのまま提出。playable でない/自分の番でない場合は
+  // submit せず、選択だけトグル。
+  const onSelectCard = (i: number) => {
+    if (selectedIdx === i && vm.phase === "turn") {
+      const card = vm.myHand[i];
+      if (card) {
+        submitAction({ type: "play_card", payload: { card } });
+        setSelectedIdx(null);
+        return;
+      }
+    }
+    setSelectedIdx(i);
+  };
+
   return (
     <div
       style={{ padding: 16 }}
@@ -406,17 +420,12 @@ function GameStage() {
             <GameMobile
               vm={vm}
               selectedIdx={selectedIdx}
-              onSelectCard={setSelectedIdx}
+              onSelectCard={onSelectCard}
               onPlay={onPlay}
               myName={myName}
             />
           ) : (
-            <GamePC
-              vm={vm}
-              selectedIdx={selectedIdx}
-              onSelectCard={setSelectedIdx}
-              onPlay={onPlay}
-            />
+            <GamePC vm={vm} selectedIdx={selectedIdx} onSelectCard={onSelectCard} onPlay={onPlay} />
           )}
           {overlay === "bid" && (
             <BidStageOverlay
@@ -482,8 +491,6 @@ function HandEndStageOverlay({
       mobile={mobile}
       napoTeam={endSel.napoTeam}
       armyTeam={endSel.armyTeam}
-      napoScore={endSel.napoScore}
-      armyScore={endSel.armyScore}
       napoWon={endSel.napoWon}
       bidValue={endSel.bidValue}
       taken={endSel.taken}
@@ -795,8 +802,6 @@ function OverlayPreview() {
               { name: "リオ", tricks: 3, picture: 1 },
               { name: "ハル", tricks: 2, picture: 0 },
             ]}
-            napoScore={14}
-            armyScore={6}
             napoWon
             bidValue={13}
             taken={14}

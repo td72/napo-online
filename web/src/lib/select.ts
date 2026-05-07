@@ -341,8 +341,6 @@ export function declarerName(input: Pick<SelectInput, "observation" | "seats">):
 export interface EndSelection {
   napoTeam: TeamPlayerVM[];
   armyTeam: TeamPlayerVM[];
-  napoScore: number;
-  armyScore: number;
   napoWon: boolean;
   bidValue: number;
   taken: number;
@@ -377,8 +375,8 @@ export function selectEndVm(input: {
   const napoTeam: TeamPlayerVM[] = [];
   const armyTeam: TeamPlayerVM[] = [];
   const standings: StandingVM[] = [];
+  // 勝敗判定用にナポ側スコア合計だけ持つ(settle は napo 勝利で declarer に正、敗北で負を返す)。
   let napoScore = 0;
-  let armyScore = 0;
   // ナポ側の獲得「絵札枚数」(宣言比較用)。トリック数ではない。
   let taken = 0;
 
@@ -403,15 +401,12 @@ export function selectEndVm(input: {
       taken += picture;
     } else {
       armyTeam.push({ name, tricks, picture });
-      armyScore += score;
     }
   }
 
   return {
     napoTeam,
     armyTeam,
-    napoScore,
-    armyScore,
     napoWon: napoScore > 0,
     bidValue: observation.current_bid.bid.tricks,
     taken,

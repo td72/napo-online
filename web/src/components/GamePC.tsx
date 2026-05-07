@@ -644,8 +644,11 @@ function Hand({
     >
       {hand.map((code, i) => {
         const offset = i - (n - 1) / 2;
-        const rot = offset * 4.5;
-        const ty = Math.abs(offset) * 4;
+        // ドーム弧: 中央が最高、両端が baseline。回転方向も鏡像反転して、
+        // 各カードが弧の中心(上方)に向かって放射状になる。
+        const maxAbs = (n - 1) / 2;
+        const ty = (maxAbs - Math.abs(offset)) * 4;
+        const rot = -offset * 4.5;
         // standard Napoleon: must follow lead suit if held(裏 J ルール込み)。
         const playable =
           !leadSuit ||

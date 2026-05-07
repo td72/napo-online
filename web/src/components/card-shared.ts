@@ -27,7 +27,7 @@ export function parseCard(code: string): ParsedCard {
   return { suit: code[0] as SuitKey, rank: code.slice(1) };
 }
 
-const SUIT_ORDER: Record<SuitKey | "JK", number> = { S: 0, H: 1, D: 2, C: 3, JK: 4 };
+const SUIT_ORDER: Record<SuitKey | "JK", number> = { C: 0, D: 1, S: 2, H: 3, JK: 4 };
 const RANK_ORDER: Record<string, number> = {
   A: 0,
   K: 1,
@@ -45,7 +45,7 @@ const RANK_ORDER: Record<string, number> = {
 };
 
 /**
- * 手札表示用ソート。suit ♠♥♦♣ → JK の順、各 suit 内は A,K,Q,J,10..2 の強い順。
+ * 手札表示用ソート。suit ♣♦♠♥ → JK の順、各 suit 内は A,K,Q,J,10..2 の強い順。
  * ゲームロジックには影響させず、見た目だけ並べる。
  */
 export function sortHand(cards: readonly string[]): string[] {
