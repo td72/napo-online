@@ -69,7 +69,7 @@ function Header() {
       <span style={badgeStyle(status)}>{status}</span>
       {myEmail && <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>{myEmail}</span>}
       {myHandle && (
-        <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>handle: {myHandle}</span>
+        <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>名前: {myHandle}</span>
       )}
       {serverVersion && (
         <span style={{ color: "var(--text-muted)", fontSize: 11 }}>server v{serverVersion}</span>
@@ -94,7 +94,11 @@ function LobbyView() {
   const connect = useStore((s) => s.connect);
   const send = useStore((s) => s.send);
 
-  const [displayName, setDisplayName] = useState("alice");
+  // 名前は localStorage に保存して次回プリフィル(server 側 handle は email key で
+  // 永続化されているが、別 device / private window でも再入力不要にしたいため)。
+  const [displayName, setDisplayName] = useState(
+    () => localStorage.getItem("napo:displayName") ?? "alice",
+  );
   const [devEmail, setDevEmail] = useState("alice@local");
   const [roomIdInput, setRoomIdInput] = useState("");
 
@@ -110,7 +114,7 @@ function LobbyView() {
             <input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="表示名"
+              placeholder="名前"
               style={inputStyle}
               data-testid="input-display-name"
             />
@@ -123,7 +127,10 @@ function LobbyView() {
             />
             <button
               type="button"
-              onClick={() => connect(displayName, devEmail)}
+              onClick={() => {
+                localStorage.setItem("napo:displayName", displayName);
+                connect(displayName, devEmail);
+              }}
               style={btnStyle}
               data-testid="btn-connect"
             >
