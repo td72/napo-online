@@ -36,3 +36,6 @@ web/playwright/.cache/
 
 # mise local override(個人ごとの HOST 設定など、コミットしない)
 .mise.local.toml
+
+# ts-rs default output dir(napo-online は web/src/types/ に出力するので bindings/ は不要)
+/bindings/
