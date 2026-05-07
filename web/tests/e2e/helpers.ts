@@ -54,6 +54,35 @@ export async function teardownUsers(users: User[]): Promise<void> {
   }
 }
 
+/**
+ * 単独 user で部屋を作って入室まで進める。COM 経由のテスト用に 5 人接続を回避できる。
+ */
+export async function spawnSingleUser(
+  browser: Browser,
+  name = "alice",
+  tag = "single",
+): Promise<User> {
+  const email = `${name}-${tag}@local`;
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto("/");
+  await page.getByTestId("input-display-name").fill(name);
+  await page.getByTestId("input-dev-email").fill(email);
+  await page.getByTestId("btn-connect").click();
+  await expect(page.getByTestId("panel-lobby")).toBeVisible();
+  return { name, email, context, page };
+}
+
+/**
+ * 「+ COM 追加」ボタンを N 回クリック。room.players が 1+N になるまで待つ。
+ */
+export async function addComs(host: Page, count: number): Promise<void> {
+  for (let i = 1; i <= count; i++) {
+    await host.getByTestId("btn-add-com").click();
+    await expect(host.getByTestId("list-players").locator("li")).toHaveCount(1 + i);
+  }
+}
+
 /** users[0] が部屋を作って ID を返す。残り全員を join + lobby 状態まで進める。 */
 export async function createRoomAndJoinAll(users: User[]): Promise<string> {
   const [host, ...rest] = users;

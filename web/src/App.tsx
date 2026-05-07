@@ -300,20 +300,31 @@ function GameStage() {
   const [layout, setLayout] = useState<"pc" | "mobile">("pc");
   const [trickResult, setTrickResult] = useState<TrickResultVM | null>(null);
 
-  // observation.completed.length が増えた瞬間を捉えて TrickResultOverlay を一定時間出す
+  // observation.completed.length が増えた瞬間を捉えて TrickResultOverlay を一定時間出す。
+  // observation 自体は trick 中の current_trick 更新でも変わるが、完了 trick の検出には
+  // completedCount だけ見れば十分。observation を deps に入れると、cleanup で setTimeout が
+  // キャンセルされ、early-return パスでは新しい timer が張られないため、overlay が消えなく
+  // なる(高速 COM 進行で再現)。observation は ref で参照する。
   const completedCount = observation?.completed.length ?? 0;
   const lastShownCount = useRef(completedCount);
+  const observationRef = useRef(observation);
+  observationRef.current = observation;
+  const seatsRef = useRef(seats);
+  seatsRef.current = seats;
   useEffect(() => {
-    if (!observation || !seats) return;
     if (completedCount <= lastShownCount.current) {
       // 初期化時 or 局またぎで count がリセットされた
       lastShownCount.current = completedCount;
       return;
     }
     lastShownCount.current = completedCount;
-    const latest = observation.completed[completedCount - 1];
+    const obs = observationRef.current;
+    const sts = seatsRef.current;
+    if (!obs || !sts) return;
+    const latest = obs.completed[completedCount - 1];
+    if (!latest) return;
     const winnerName =
-      seats.find((s) => s.seat === latest.winner)?.display_name ?? `seat${latest.winner}`;
+      sts.find((s) => s.seat === latest.winner)?.display_name ?? `seat${latest.winner}`;
     const facesGained = latest.plays.filter((p) => FACE_RANKS.has(p.card.slice(1))).length;
     setTrickResult({
       trickIndex: completedCount,
@@ -323,7 +334,7 @@ function GameStage() {
     });
     const t = setTimeout(() => setTrickResult(null), TRICK_RESULT_DURATION_MS);
     return () => clearTimeout(t);
-  }, [observation, seats, completedCount]);
+  }, [completedCount]);
 
   const handIndex = currentHandIndex(events);
   const vm = selectGameVm({

@@ -639,12 +639,13 @@ impl Room {
     /// observation 経由で全クライアントに届く。
     async fn drive_coms(&mut self) {
         // 安全のため最大ステップ数で打ち切り(無限ループ予防)
-        for _ in 0..200 {
+        for step in 0..200 {
             // 次に行動すべき seat を取得
             let Some(session) = self.session.as_ref() else {
                 return;
             };
             let Some(seat) = session.current_player() else {
+                tracing::debug!(room = %self.id, step, "drive_coms: no current_player, exit");
                 return;
             };
             let Some(pid) = session.seat_to_player().get(seat).cloned() else {
@@ -655,15 +656,22 @@ impl Room {
                 return;
             };
             if !member.is_com {
+                tracing::debug!(room = %self.id, step, %pid, "drive_coms: human turn, exit");
                 return;
             }
-            // 視覚的に分かるようにディレイ
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tracing::debug!(room = %self.id, step, com = %pid, "drive_coms: COM turn, sleeping");
+            // 視覚的に分かるように軽いディレイ。NAPO_COM_DELAY_MS で上書き可。
+            let delay_ms: u64 = std::env::var("NAPO_COM_DELAY_MS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(500);
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             // 現在 phase に対する legal action の先頭を選ぶ
-            let Some(wire) = session.pick_com_action() else {
+            let Some(wire) = self.session.as_ref().and_then(|s| s.pick_com_action()) else {
                 tracing::warn!(room = %self.id, com = %pid, "COM no legal action; bail");
                 return;
             };
+            tracing::debug!(room = %self.id, step, com = %pid, ?wire, "drive_coms: apply");
             // apply
             let session_mut = self.session.as_mut().unwrap();
             match session_mut.apply(&pid, wire) {

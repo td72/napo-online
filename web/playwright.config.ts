@@ -40,6 +40,8 @@ export default defineConfig({
       NAPO_DB: "/tmp/napo-e2e.db",
       // e2e は 3 局/match に短縮(本番は 10 局)。Match 完走 spec のターンアラウンドを抑える。
       NAPO_HANDS_PER_MATCH: "3",
+      // COM delay。本番 500ms、test では速度優先で短く。
+      NAPO_COM_DELAY_MS: "100",
     },
   },
 });
