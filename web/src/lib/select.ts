@@ -346,6 +346,7 @@ export function selectEndVm(input: {
   const standings: StandingVM[] = [];
   let napoScore = 0;
   let armyScore = 0;
+  // ナポ側の獲得「絵札枚数」(宣言比較用)。トリック数ではない。
   let taken = 0;
 
   for (let seat = 0; seat < observation.num_players; seat++) {
@@ -362,11 +363,11 @@ export function selectEndVm(input: {
     if (role === "napo") {
       napoTeam.push({ name, tricks, picture });
       napoScore += score;
-      taken += tricks;
+      taken += picture;
     } else if (role === "partner") {
       napoTeam.push({ name, tricks, picture, hidden: "partner" });
       napoScore += score;
-      taken += tricks;
+      taken += picture;
     } else {
       armyTeam.push({ name, tricks, picture });
       armyScore += score;
