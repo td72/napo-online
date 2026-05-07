@@ -5,7 +5,7 @@
 //   - lobby: btn-create-room, input-room-id, btn-join-room, btn-start-match
 //   - text-room-id: 部屋 ID 表示
 //   - game-stage[data-overlay][data-my-turn][data-completed-tricks]: GameStage container
-//   - overlay-bid, overlay-partner[data-mode], overlay-widow, overlay-end, overlay-trick-result
+//   - overlay-bid, overlay-partner[data-mode], overlay-widow, overlay-end
 //   - bid-tricks-{n}, bid-trump-{S/H/D/C/NT}, btn-bid, btn-pass
 //   - adj-card-{code}, btn-confirm-adjutant
 //   - widow-card-{code}[data-discarded], btn-confirm-widow
@@ -202,8 +202,7 @@ export async function autoWidow(declarer: Page, discardCount = 2): Promise<void>
  * 1 trick を全員プレイさせる。各 user が my-turn になったら playable な手札の先頭を
  * 出す。1 trick 終了(completed-tricks が +1)するまでループ。
  *
- * TrickResultOverlay(2s 自動 dismiss)が出ている間 click は弾かれるため、
- * 各 user に対して overlay-trick-result が disappear するまで待ってから click。
+ * gather animation 中(data-trick-anim=true)は次 trick の進行と重なるが、click は通る。
  */
 export async function playOneTrick(users: User[]): Promise<void> {
   const stage = users[0].page.getByTestId("game-stage");
@@ -230,12 +229,6 @@ export async function playOneTrick(users: User[]): Promise<void> {
       const overlay = await currentOverlay(u.page);
       const myTurn = await isMyTurn(u.page);
       if (overlay !== "none" || !myTurn) continue;
-
-      // TrickResultOverlay が出ている間は click が弾かれるので消えるまで待つ
-      const trickResult = u.page.getByTestId("overlay-trick-result");
-      if (await trickResult.isVisible().catch(() => false)) {
-        await trickResult.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
-      }
 
       const playable = u.page.locator('[data-testid^="hand-card-"][data-playable="true"]');
       const n = await playable.count();

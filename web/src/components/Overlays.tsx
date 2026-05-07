@@ -2,7 +2,6 @@
 // - bid: 入札ラウンド中。各 seat の現在 bid を表示 + 自分の bid 入力
 // - partner: 副官指名中(declarer が選択するのを待つ全員向け表示)
 // - widow: 場札交換中(declarer のみ。場札 2 枚 + 手札 10 枚から捨て札 2 枚を選ぶ)
-// - trick-result: 1トリック完了で勝者を発表
 // - end: ゲーム(局)終了 + standings
 //
 // shared 定数(overlayBase / pillBtn / primaryBtn など)は Overlays.tsx 内に閉じる。
@@ -13,7 +12,7 @@ import type { SuitKey } from "./card-shared";
 import { Suit, TrumpCard } from "./Card";
 import { Avatar } from "./Player";
 
-export type OverlayPhase = "bid" | "partner" | "widow" | "trick-result" | "end" | null;
+export type OverlayPhase = "bid" | "partner" | "widow" | "end" | null;
 
 export type CornerPos = "tl" | "tr" | "bl" | "br";
 
@@ -761,116 +760,6 @@ function CardRow({
             </div>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-// ====================== TrickResult ======================
-
-export interface TrickResultOverlayProps {
-  mobile?: boolean;
-  trickIndex: number;
-  winnerName: string;
-  /** その trick で勝った絵札枚数(face cards captured)。 */
-  facesGained: number;
-  /** 場の 4(or 5)枚を勝者の手元に集めるアニメ用。 */
-  cards: { card: string; rot: number }[];
-}
-
-export function TrickResultOverlay({
-  mobile,
-  trickIndex,
-  winnerName,
-  facesGained,
-  cards,
-}: TrickResultOverlayProps) {
-  return (
-    <div
-      style={overlayBase}
-      data-testid="overlay-trick-result"
-      data-trick-index={trickIndex}
-      data-winner={winnerName}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(ellipse at center, rgba(122,139,92,0.18), rgba(43,38,32,0.55))",
-          backdropFilter: "blur(2px)",
-        }}
-      />
-      <div style={{ position: "relative", textAlign: "center", color: "#fff" }}>
-        <div
-          style={{ fontSize: mobile ? 10 : 12, letterSpacing: 4, opacity: 0.7, marginBottom: 6 }}
-        >
-          TRICK {trickIndex}
-        </div>
-        <h1
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: mobile ? 26 : 42,
-            margin: "0 0 16px",
-            letterSpacing: -0.5,
-            textShadow: "0 4px 20px rgba(0,0,0,0.4)",
-          }}
-        >
-          {winnerName} さんが取りました
-        </h1>
-        <div
-          style={{
-            position: "relative",
-            width: mobile ? 220 : 340,
-            height: mobile ? 130 : 180,
-            margin: "0 auto 16px",
-          }}
-        >
-          {cards.map((p, i) => (
-            <div
-              key={i}
-              style={{
-                position: "absolute",
-                left: mobile ? (60 + i * 40) * 0.8 : 60 + i * 40,
-                top: mobile ? 30 : 40,
-                animation: `gather 600ms var(--ease-default) ${i * 50}ms backwards`,
-              }}
-            >
-              <TrumpCard code={p.card} w={mobile ? 50 : 68} h={mobile ? 74 : 100} rot={p.rot} />
-            </div>
-          ))}
-        </div>
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 12,
-            padding: mobile ? "8px 16px" : "12px 24px",
-            background: "rgba(251,247,238,0.95)",
-            color: "var(--text-primary)",
-            borderRadius: 99,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
-          }}
-        >
-          <Avatar name={winnerName} size={mobile ? 28 : 36} />
-          <div style={{ textAlign: "left" }}>
-            <div style={{ fontSize: mobile ? 11 : 13, fontWeight: 600 }}>{winnerName}</div>
-            <div
-              style={{
-                fontSize: mobile ? 10 : 12,
-                color: "var(--accent-success)",
-                fontWeight: 600,
-              }}
-            >
-              {facesGained > 0 ? `+${facesGained} 絵札` : "絵札 0"}
-            </div>
-          </div>
-          <div style={{ width: 1, height: 24, background: "var(--border-color)" }} />
-          <div style={{ fontSize: mobile ? 10 : 12, color: "var(--text-secondary)" }}>
-            次のリーダー:{" "}
-            <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{winnerName}</span>
-          </div>
-        </div>
       </div>
     </div>
   );

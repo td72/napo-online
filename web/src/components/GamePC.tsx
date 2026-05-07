@@ -10,6 +10,8 @@ import { Suit, TrumpCard } from "./Card";
 import { PlayerBadge } from "./Player";
 
 export type CornerPos = "tl" | "tr" | "bl" | "br";
+/** trick の場上配置。自席は "self"(下中央)、他席は四隅。 */
+export type FieldSeatPos = CornerPos | "self";
 
 export interface OpponentVM {
   name: string;
@@ -33,13 +35,24 @@ export interface FieldPlayVM {
   card: string;
   /** 場のカードの傾き(deg)。 */
   rot: number;
+  /** プレイヤーの seat index。 */
+  seat: number;
+  /** 自席視点での配置(時計回り、自席は "self")。 */
+  pos: FieldSeatPos;
   /** lead(その trick の最初に出された)カードか。 */
   lead?: boolean;
-  /** trick 取得後のアニメーションで「勝者」のカード。 */
+  /** 勝者カード(gather animation の集合先 = このカードの位置)。 */
   winner?: boolean;
 }
 
 export type GamePhase = "turn" | "wait" | "trick" | "lobby";
+
+/**
+ * trick の演出 phase。
+ * - "playing": 通常進行(0〜4 枚 current_trick 表示)
+ * - "gather": 5 枚揃い、勝者方向へ吸い寄せアニメ中(client side で 1.2s 程度保持)
+ */
+export type TrickPhase = "playing" | "gather";
 
 export interface GamePcViewModel {
   /** ゲームの大局 phase。turn = 自分の番、wait = 他人の番、trick = 場のカードを集めるアニメ中。 */
@@ -51,6 +64,10 @@ export interface GamePcViewModel {
   opponents: OpponentVM[];
   /** 場に出ている current trick(0..5枚)。 */
   trick: FieldPlayVM[];
+  /** trick 演出 phase。"gather" の間は trick が「直前 trick の 5 枚」を保持し、勝者へ吸い寄せ。 */
+  trickPhase: TrickPhase;
+  /** gather 中の勝者の場上位置(trick の最終 sink 先)。 */
+  trickWinnerPos: FieldSeatPos | null;
   /** lead suit。マスト・フォロー判定用。 */
   leadSuit: SuitKey | null;
   /** ナポレオンの名前(top bar 表示用)。 */
@@ -480,6 +497,15 @@ export function CapturedPile({
   );
 }
 
+/** 場の中心からみた各 seat 位置のオフセット (px)。pc layout の Trick 用。 */
+const FIELD_LAYOUT_PC: Record<FieldSeatPos, { dx: number; dy: number; scale: number }> = {
+  bl: { dx: -96, dy: 60, scale: 1 },
+  br: { dx: 96, dy: 60, scale: 1 },
+  tl: { dx: -56, dy: -60, scale: 0.9 },
+  tr: { dx: 56, dy: -60, scale: 0.9 },
+  self: { dx: 0, dy: 90, scale: 1 },
+};
+
 function Trick({ vm }: { vm: GamePcViewModel }) {
   if (vm.trick.length === 0) {
     return (
@@ -507,24 +533,10 @@ function Trick({ vm }: { vm: GamePcViewModel }) {
   const H = 240;
   const cx = W / 2;
   const cy = H / 2;
-  const dxBack = 56;
-  const dxFront = 96;
-  const dyBack = 60;
-  const dyFront = 60;
 
-  // 各 play を seat 位置(対応する opponent.pos)から左右上下にオフセット。
-  // 一番手前の自分(pos === undefined)は cy + 中央寄り、対戦相手は四隅。
-  const playPos = (idx: number, total: number) => {
-    // simple: positions for up to 5 plays, mirror corners
-    const layouts = [
-      { x: cx - dxFront, y: cy + dyFront, scale: 1 }, // bl
-      { x: cx + dxFront, y: cy + dyFront, scale: 1 }, // br
-      { x: cx - dxBack, y: cy - dyBack, scale: 0.9 }, // tl
-      { x: cx + dxBack, y: cy - dyBack, scale: 0.9 }, // tr
-      { x: cx, y: cy + dyFront + 30, scale: 1 }, // self center bottom
-    ];
-    return layouts[idx] ?? layouts[total - 1];
-  };
+  // gather 中は勝者位置を集合先にする
+  const winnerOff = vm.trickWinnerPos ? FIELD_LAYOUT_PC[vm.trickWinnerPos] : null;
+  const isGather = vm.trickPhase === "gather";
 
   return (
     <div
@@ -539,33 +551,37 @@ function Trick({ vm }: { vm: GamePcViewModel }) {
         overflow: "visible",
       }}
     >
-      {vm.trick.map((p, i) => {
-        const pos = playPos(i, vm.trick.length);
-        const cw = 72 * pos.scale;
-        const ch = 104 * pos.scale;
-        const z = vm.phase === "trick" && p.winner ? 10 : pos.scale >= 1 ? 5 : 2;
+      {vm.trick.map((p) => {
+        const off = FIELD_LAYOUT_PC[p.pos];
+        const cw = 72 * off.scale;
+        const ch = 104 * off.scale;
+        const baseX = cx + off.dx;
+        const baseY = cy + off.dy;
+        const z = p.winner ? 10 : off.scale >= 1 ? 5 : 2;
+        // gather 時の delta: 勝者位置 - 自カード位置
+        const gx = isGather && winnerOff ? winnerOff.dx - off.dx : 0;
+        const gy = isGather && winnerOff ? winnerOff.dy - off.dy : 0;
         return (
           <div
-            key={`${p.player}-${i}`}
+            key={p.card}
+            data-testid={`field-card-${p.card}`}
             style={{
               position: "absolute",
-              left: pos.x - cw / 2,
-              top: pos.y - ch / 2,
-              animation:
-                vm.phase === "trick"
-                  ? `gather 700ms var(--ease-default) ${300 + i * 40}ms forwards`
-                  : `card-land 280ms var(--ease-bounce) ${i * 60}ms backwards`,
+              left: baseX - cw / 2,
+              top: baseY - ch / 2,
+              animation: isGather
+                ? "gather-out 1000ms var(--ease-default) forwards"
+                : "card-land 500ms var(--ease-bounce) backwards",
               zIndex: z,
               filter:
-                pos.scale < 1
+                off.scale < 1
                   ? "drop-shadow(0 4px 6px rgba(43,38,32,0.10))"
                   : "drop-shadow(0 6px 10px rgba(43,38,32,0.16))",
-              // CSS vars for keyframes
-              ...({ "--gx": "-260px", "--gy": "-180px" } as CSSProperties),
+              ...({ "--gx": `${gx}px`, "--gy": `${gy}px` } as CSSProperties),
             }}
           >
             <TrumpCard code={p.card} w={cw} h={ch} rot={p.rot} />
-            {p.lead && vm.phase !== "trick" && (
+            {p.lead && !isGather && (
               <div
                 style={{
                   position: "absolute",

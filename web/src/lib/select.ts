@@ -1,7 +1,14 @@
 // Zustand store state(WS から流れてくる observation / room / seats)を
 // design 由来の GamePcViewModel / Overlay VMs に変換する pure 関数群。
 
-import type { CornerPos, FieldPlayVM, GamePcViewModel, OpponentVM } from "../components/GamePC";
+import type {
+  CornerPos,
+  FieldPlayVM,
+  FieldSeatPos,
+  GamePcViewModel,
+  OpponentVM,
+  TrickPhase,
+} from "../components/GamePC";
 import type { BidSeatVM, OverlayPhase, StandingVM, TeamPlayerVM } from "../components/Overlays";
 import { effectiveLeadSuit, sortHand, type SuitKey } from "../components/card-shared";
 import type {
@@ -49,6 +56,13 @@ export function seatToCorner(mySeat: number, seat: number, numPlayers: number): 
   return cornerForOffset(offset);
 }
 
+/** 場のカード配置: 自席は "self"(下中央)、他席は corner。 */
+export function seatToFieldPos(mySeat: number, seat: number, numPlayers: number): FieldSeatPos {
+  const offset = (((seat - mySeat) % numPlayers) + numPlayers) % numPlayers;
+  if (offset === 0) return "self";
+  return cornerForOffset(offset);
+}
+
 /** 各 seat ごとに自分が取った face card を集約。 */
 function capturedBySeat(obs: WireObservation, numPlayers: number): string[][] {
   const out: string[][] = Array.from({ length: numPlayers }, () => []);
@@ -74,6 +88,11 @@ export interface SelectInput {
   handIndex: number | null;
   /** seat → 切断時刻 (ms epoch)。store.disconnectedSeats を渡す。 */
   disconnectedSeats?: Map<number, number>;
+  /**
+   * trick 演出 buffer。直前 trick の 5 枚を「勝者吸い寄せ」アニメで表示中の値。
+   * App.tsx の state machine が completed 増分検知時に注入する。
+   */
+  trickAnim?: { plays: WirePlayedCard[]; winnerSeat: number } | null;
 }
 
 /**
@@ -81,7 +100,8 @@ export interface SelectInput {
  * Bidding 中で declarer/bid 等が無い場合も partial で OK(BidOverlay 側で対応)。
  */
 export function selectGameVm(input: SelectInput): GamePcViewModel | null {
-  const { observation, seats, mySeat, hands_per_match, handIndex, disconnectedSeats } = input;
+  const { observation, seats, mySeat, hands_per_match, handIndex, disconnectedSeats, trickAnim } =
+    input;
   if (!observation || !seats || mySeat === null) return null;
 
   const seatToName = new Map<number, string>();
@@ -113,12 +133,23 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
     });
   }
 
-  // current trick → FieldPlayVM[]
-  const trick: FieldPlayVM[] = observation.current_trick.map((p: WirePlayedCard, i) => ({
+  // trick 表示: gather 中は trickAnim の 5 枚、通常は current_trick。
+  // gather 中の lead はソースが完了 trick(plays[0] = lead)、winner は winnerSeat と一致する seat。
+  const trickSource: WirePlayedCard[] = trickAnim?.plays ?? observation.current_trick;
+  const trickPhase: TrickPhase = trickAnim ? "gather" : "playing";
+  const trickWinnerSeat = trickAnim?.winnerSeat ?? null;
+  const trickWinnerPos: FieldSeatPos | null =
+    trickWinnerSeat !== null
+      ? seatToFieldPos(mySeat, trickWinnerSeat, observation.num_players)
+      : null;
+  const trick: FieldPlayVM[] = trickSource.map((p: WirePlayedCard, i) => ({
     player: nameOf(p.seat),
     card: p.card,
     rot: i % 2 === 0 ? -4 : 4,
+    seat: p.seat,
+    pos: seatToFieldPos(mySeat, p.seat, observation.num_players),
     lead: i === 0,
+    winner: trickWinnerSeat !== null && p.seat === trickWinnerSeat,
   }));
 
   const napoSeat = observation.declarer;
@@ -139,6 +170,8 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
     myCaptured: captured[mySeat] ?? [],
     opponents,
     trick,
+    trickPhase,
+    trickWinnerPos,
     leadSuit,
     napoName,
     trumpSuit,

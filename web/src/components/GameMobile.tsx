@@ -13,7 +13,7 @@ import type { CSSProperties } from "react";
 import { belongsToLead, type SuitKey, SUITS, parseCard } from "./card-shared";
 import { Suit, TrumpCard } from "./Card";
 import { Avatar, DisconnectedBadge } from "./Player";
-import type { GamePcViewModel } from "./GamePC";
+import type { FieldSeatPos, GamePcViewModel } from "./GamePC";
 
 export interface GameMobileProps {
   vm: GamePcViewModel;
@@ -494,13 +494,21 @@ function FieldIdle() {
   );
 }
 
+const FIELD_LAYOUT_MOBILE: Record<FieldSeatPos, { dx: number; dy: number }> = {
+  bl: { dx: -68, dy: 12 },
+  br: { dx: 68, dy: 12 },
+  tl: { dx: -34, dy: -28 },
+  tr: { dx: 34, dy: -28 },
+  self: { dx: 0, dy: 56 },
+};
+
 function Field({ vm }: { vm: GamePcViewModel }) {
   const W = 280;
   const H = 200;
   const cx = W / 2;
   const cy = H / 2;
-  const xs = [cx - 100, cx - 34, cx + 34, cx + 100];
-  const ys = [cy + 18, cy - 24, cy - 24, cy + 18];
+  const winnerOff = vm.trickWinnerPos ? FIELD_LAYOUT_MOBILE[vm.trickWinnerPos] : null;
+  const isGather = vm.trickPhase === "gather";
 
   return (
     <div
@@ -514,59 +522,73 @@ function Field({ vm }: { vm: GamePcViewModel }) {
         boxShadow: "inset 0 1px 3px rgba(43,38,32,0.08)",
       }}
     >
-      {vm.trick.slice(0, 4).map((p, i) => (
-        <div
-          key={`${p.player}-${i}`}
-          style={{
-            position: "absolute",
-            left: xs[i] - 26,
-            top: ys[i] - 39,
-            animation: `card-land 280ms var(--ease-bounce) ${i * 50}ms backwards`,
-            zIndex: 2 + i,
-            filter: "drop-shadow(0 4px 6px rgba(43,38,32,0.12))",
-          }}
-        >
-          <TrumpCard code={p.card} w={52} h={78} rot={p.rot} />
-          {p.lead && (
+      {vm.trick.map((p) => {
+        const off = FIELD_LAYOUT_MOBILE[p.pos];
+        const baseX = cx + off.dx;
+        const baseY = cy + off.dy;
+        const gx = isGather && winnerOff ? winnerOff.dx - off.dx : 0;
+        const gy = isGather && winnerOff ? winnerOff.dy - off.dy : 0;
+        return (
+          <div
+            key={p.card}
+            data-testid={`field-card-${p.card}`}
+            style={
+              {
+                position: "absolute",
+                left: baseX - 26,
+                top: baseY - 39,
+                animation: isGather
+                  ? "gather-out 1000ms var(--ease-default) forwards"
+                  : "card-land 500ms var(--ease-bounce) backwards",
+                zIndex: p.winner ? 10 : 5,
+                filter: "drop-shadow(0 4px 6px rgba(43,38,32,0.12))",
+                "--gx": `${gx}px`,
+                "--gy": `${gy}px`,
+              } as CSSProperties
+            }
+          >
+            <TrumpCard code={p.card} w={52} h={78} rot={p.rot} />
+            {p.lead && !isGather && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: -7,
+                  left: "50%",
+                  transform: `translateX(-50%) rotate(${p.rot}deg)`,
+                  background: "var(--text-primary)",
+                  color: "#fff",
+                  fontSize: 7,
+                  fontWeight: 700,
+                  letterSpacing: 0.8,
+                  padding: "1px 5px",
+                  borderRadius: 2,
+                  fontFamily: "var(--font-sans)",
+                  whiteSpace: "nowrap",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                }}
+              >
+                LEAD
+              </div>
+            )}
             <div
               style={{
                 position: "absolute",
-                top: -7,
+                bottom: -14,
                 left: "50%",
-                transform: `translateX(-50%) rotate(${p.rot}deg)`,
-                background: "var(--text-primary)",
-                color: "#fff",
-                fontSize: 7,
-                fontWeight: 700,
-                letterSpacing: 0.8,
-                padding: "1px 5px",
-                borderRadius: 2,
-                fontFamily: "var(--font-sans)",
+                transform: "translateX(-50%)",
+                fontSize: 9,
+                color: "var(--text-secondary)",
                 whiteSpace: "nowrap",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                maxWidth: 56,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              LEAD
+              {p.player}
             </div>
-          )}
-          <div
-            style={{
-              position: "absolute",
-              bottom: -14,
-              left: "50%",
-              transform: "translateX(-50%)",
-              fontSize: 9,
-              color: "var(--text-secondary)",
-              whiteSpace: "nowrap",
-              maxWidth: 56,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {p.player}
           </div>
-        </div>
-      ))}
+        );
+      })}
       {vm.leadSuit && (
         <div
           style={{

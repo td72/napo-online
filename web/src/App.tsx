@@ -12,7 +12,6 @@ import {
   EndOverlay,
   type OverlayPhase,
   PartnerOverlay,
-  TrickResultOverlay,
   WidowOverlay,
 } from "./components/Overlays";
 import { Avatar, PlayerBadge } from "./components/Player";
@@ -26,7 +25,7 @@ import {
   selectOverlayPhase,
 } from "./lib/select";
 import { useStore } from "./lib/store";
-import type { WireTrump } from "./types";
+import type { WirePlayedCard, WireTrump } from "./types";
 
 function App() {
   const observation = useStore((s) => s.observation);
@@ -272,15 +271,8 @@ function LobbyView() {
   );
 }
 
-interface TrickResultVM {
-  trickIndex: number;
-  winnerName: string;
-  facesGained: number;
-  cards: { card: string; rot: number }[];
-}
-
-const TRICK_RESULT_DURATION_MS = 2000;
-const FACE_RANKS = new Set(["A", "K", "Q", "J", "10"]);
+/** 勝者方向への吸い寄せアニメ尺。CSS gather-out と同期。 */
+const TRICK_GATHER_DURATION_MS = 1200;
 
 function GameStage() {
   const observation = useStore((s) => s.observation);
@@ -299,41 +291,30 @@ function GameStage() {
   const [selectedTricks, setSelectedTricks] = useState(13);
   const [selectedTrump, setSelectedTrump] = useState<WireTrump>("S");
   const [layout, setLayout] = useState<"pc" | "mobile">("pc");
-  const [trickResult, setTrickResult] = useState<TrickResultVM | null>(null);
+  const [trickAnim, setTrickAnim] = useState<{
+    plays: WirePlayedCard[];
+    winnerSeat: number;
+  } | null>(null);
 
-  // observation.completed.length が増えた瞬間を捉えて TrickResultOverlay を一定時間出す。
-  // observation 自体は trick 中の current_trick 更新でも変わるが、完了 trick の検出には
-  // completedCount だけ見れば十分。observation を deps に入れると、cleanup で setTimeout が
-  // キャンセルされ、early-return パスでは新しい timer が張られないため、overlay が消えなく
-  // なる(高速 COM 進行で再現)。observation は ref で参照する。
+  // observation.completed.length が増えた瞬間を捉えて gather animation を発火。
+  // observation を deps に入れると毎フレーム cleanup → タイマー再生成 で残留バグが起きるので
+  // completedCount のみを deps にし、observation は ref で参照する。
   const completedCount = observation?.completed.length ?? 0;
   const lastShownCount = useRef(completedCount);
   const observationRef = useRef(observation);
   observationRef.current = observation;
-  const seatsRef = useRef(seats);
-  seatsRef.current = seats;
   useEffect(() => {
     if (completedCount <= lastShownCount.current) {
-      // 初期化時 or 局またぎで count がリセットされた
       lastShownCount.current = completedCount;
       return;
     }
     lastShownCount.current = completedCount;
     const obs = observationRef.current;
-    const sts = seatsRef.current;
-    if (!obs || !sts) return;
+    if (!obs) return;
     const latest = obs.completed[completedCount - 1];
     if (!latest) return;
-    const winnerName =
-      sts.find((s) => s.seat === latest.winner)?.display_name ?? `seat${latest.winner}`;
-    const facesGained = latest.plays.filter((p) => FACE_RANKS.has(p.card.slice(1))).length;
-    setTrickResult({
-      trickIndex: completedCount,
-      winnerName,
-      facesGained,
-      cards: latest.plays.map((p, i) => ({ card: p.card, rot: i % 2 === 0 ? -8 : 8 })),
-    });
-    const t = setTimeout(() => setTrickResult(null), TRICK_RESULT_DURATION_MS);
+    setTrickAnim({ plays: latest.plays, winnerSeat: latest.winner });
+    const t = setTimeout(() => setTrickAnim(null), TRICK_GATHER_DURATION_MS);
     return () => clearTimeout(t);
   }, [completedCount]);
 
@@ -347,6 +328,7 @@ function GameStage() {
     hands_per_match,
     handIndex,
     disconnectedSeats,
+    trickAnim,
   });
   const overlay = selectOverlayPhase(observation, events);
   const myName = mySeatName({ seats, mySeat, myEmail });
@@ -379,6 +361,7 @@ function GameStage() {
       data-my-turn={observation.to_act === mySeat ? "true" : "false"}
       data-completed-tricks={observation.completed.length}
       data-trick-index={observation.trick_index}
+      data-trick-anim={trickAnim ? "true" : "false"}
       data-room-phase={room?.state.type ?? "unknown"}
     >
       <div style={{ display: "flex", gap: 8, marginBottom: 8, justifyContent: "center" }}>
@@ -453,15 +436,6 @@ function GameStage() {
               observation={observation}
               mySeat={mySeat}
               mobile={layout === "mobile"}
-            />
-          )}
-          {trickResult && (
-            <TrickResultOverlay
-              mobile={layout === "mobile"}
-              trickIndex={trickResult.trickIndex}
-              winnerName={trickResult.winnerName}
-              facesGained={trickResult.facesGained}
-              cards={trickResult.cards}
             />
           )}
           <HandEndStageOverlay
@@ -740,7 +714,7 @@ function OverlayPreview() {
         }}
       >
         <h2 style={{ ...h2Style, margin: 0, flex: 1 }}>Overlays preview</h2>
-        {(["bid", "partner", "trick-result", "end", null] as const).map((p) => (
+        {(["bid", "partner", "end", null] as const).map((p) => (
           <button
             type="button"
             key={String(p)}
@@ -810,19 +784,6 @@ function OverlayPreview() {
           />
         )}
         {active === "partner" && <PartnerOverlay declarerName="ミナト" />}
-        {active === "trick-result" && (
-          <TrickResultOverlay
-            trickIndex={4}
-            winnerName="ナギ"
-            facesGained={2}
-            cards={[
-              { card: "HA", rot: -8 },
-              { card: "HK", rot: 4 },
-              { card: "D7", rot: -4 },
-              { card: "CQ", rot: 8 },
-            ]}
-          />
-        )}
         {active === "end" && (
           <EndOverlay
             napoTeam={[
@@ -905,11 +866,13 @@ function GamePreview() {
       },
     ],
     trick: [
-      { player: "ミナト", card: "D7", rot: 5, lead: true },
-      { player: "アオイ", card: "CQ", rot: -4 },
-      { player: "ナギ", card: "HA", rot: -6, winner: true },
-      { player: "リオ", card: "HK", rot: 4 },
+      { player: "ミナト", card: "D7", rot: 5, seat: 2, pos: "tl", lead: true },
+      { player: "アオイ", card: "CQ", rot: -4, seat: 4, pos: "br" },
+      { player: "ナギ", card: "HA", rot: -6, seat: 1, pos: "bl", winner: true },
+      { player: "リオ", card: "HK", rot: 4, seat: 3, pos: "tr" },
     ],
+    trickPhase: "playing",
+    trickWinnerPos: null,
     leadSuit: "D",
     napoName: "ミナト",
     trumpSuit: "H",

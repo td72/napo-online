@@ -104,6 +104,21 @@ body {
   }
 }
 
+/* trick 確定後、勝者方向に各カードを吸い寄せる演出。--gx/--gy は勝者位置への delta px。 */
+@keyframes gather-out {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--gx, 0), var(--gy, 0)) scale(0.7);
+    opacity: 0;
+  }
+}
+
 @keyframes confetti-fall {
   0% {
     transform: translateY(-20px) rotate(0deg);
