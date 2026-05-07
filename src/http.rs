@@ -167,6 +167,62 @@ pub async fn list_stats(
     Ok(Json(out))
 }
 
+#[derive(Serialize)]
+pub struct RoomListResponse {
+    pub rooms: Vec<RoomSummaryResponse>,
+}
+
+#[derive(Serialize)]
+pub struct RoomSummaryResponse {
+    pub room_id: String,
+    pub host: String,
+    pub phase: String,
+    pub max_players: usize,
+    pub member_count: usize,
+    pub joinable: bool,
+    pub members: Vec<RoomMemberResponse>,
+    pub updated_at: i64,
+}
+
+#[derive(Serialize)]
+pub struct RoomMemberResponse {
+    pub display_name: String,
+    pub is_com: bool,
+}
+
+/// 現存している全 room の軽量サマリ。Lobby は誰でも join 可、
+/// それ以外は既存メンバーのみ復帰可。
+pub async fn list_rooms(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+) -> Result<Json<RoomListResponse>, AppError> {
+    let summaries = state.db.list_room_summaries().await?;
+    let rooms = summaries
+        .into_iter()
+        .map(|s| {
+            let joinable = s.phase == "Lobby" && s.members.len() < s.max_players;
+            RoomSummaryResponse {
+                room_id: s.room_id,
+                host: s.host,
+                phase: s.phase,
+                max_players: s.max_players,
+                member_count: s.members.len(),
+                joinable,
+                members: s
+                    .members
+                    .into_iter()
+                    .map(|m| RoomMemberResponse {
+                        display_name: m.display_name,
+                        is_com: m.is_com,
+                    })
+                    .collect(),
+                updated_at: s.updated_at,
+            }
+        })
+        .collect();
+    Ok(Json(RoomListResponse { rooms }))
+}
+
 /// 終局済みの局を新しい順に返す。`?limit=N&offset=M`(デフォルト 20、最大 100)。
 pub async fn list_games(
     State(state): State<AppState>,

@@ -194,6 +194,7 @@ function LobbyView() {
               参加
             </button>
           </div>
+          <RoomList />
         </section>
       )}
 
@@ -302,6 +303,135 @@ function LobbyView() {
       )}
     </div>
   );
+}
+
+interface RoomSummary {
+  room_id: string;
+  host: string;
+  phase: string;
+  max_players: number;
+  member_count: number;
+  joinable: boolean;
+  members: { display_name: string; is_com: boolean }[];
+  updated_at: number;
+}
+
+const ROOM_LIST_REFRESH_MS = 5000;
+
+function RoomList() {
+  const send = useStore((s) => s.send);
+  const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchRooms = async () => {
+      try {
+        const r = await fetch("/api/rooms");
+        if (!r.ok) return;
+        const j = (await r.json()) as { rooms: RoomSummary[] };
+        if (!cancelled) setRooms(j.rooms);
+      } catch (e) {
+        console.warn("fetch /api/rooms failed", e);
+      }
+    };
+    void fetchRooms();
+    const id = setInterval(() => void fetchRooms(), ROOM_LIST_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (rooms === null) {
+    return (
+      <p style={{ marginTop: 12, color: "var(--text-muted)", fontSize: 12 }}>ルーム一覧を取得中…</p>
+    );
+  }
+  if (rooms.length === 0) {
+    return (
+      <p style={{ marginTop: 12, color: "var(--text-muted)", fontSize: 12 }}>
+        現在開いているルームはありません
+      </p>
+    );
+  }
+  return (
+    <div style={{ marginTop: 12 }} data-testid="list-rooms">
+      <h3 style={{ ...h2Style, fontSize: 13, margin: "0 0 6px" }}>現在のルーム</h3>
+      <ul
+        style={{
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+        }}
+      >
+        {rooms.map((r) => (
+          <li
+            key={r.room_id}
+            data-testid={`room-${r.room_id}`}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 10px",
+              border: "1px solid var(--border-color)",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--bg-primary)",
+              fontSize: 12,
+            }}
+          >
+            <span style={{ fontFamily: "var(--font-serif)", fontWeight: 600 }}>{r.room_id}</span>
+            <span style={{ color: "var(--text-muted)" }}>
+              {phaseLabel(r.phase)} · {r.member_count}/{r.max_players}
+            </span>
+            <span
+              style={{
+                color: "var(--text-secondary)",
+                flex: 1,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {r.members.map((m) => m.display_name + (m.is_com ? " [COM]" : "")).join(", ")}
+            </span>
+            <button
+              type="button"
+              onClick={() => send({ type: "join_room", payload: { room_id: r.room_id } })}
+              disabled={!r.joinable}
+              data-testid={`btn-join-${r.room_id}`}
+              style={{
+                ...btnStyle,
+                padding: "3px 10px",
+                fontSize: 11,
+                opacity: r.joinable ? 1 : 0.4,
+                cursor: r.joinable ? "pointer" : "not-allowed",
+              }}
+            >
+              {r.joinable ? "参加" : phaseLabel(r.phase)}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function phaseLabel(phase: string): string {
+  switch (phase) {
+    case "Lobby":
+      return "待機中";
+    case "Playing":
+      return "進行中";
+    case "BetweenHands":
+      return "局間";
+    case "Ended":
+      return "終了";
+    default:
+      return phase;
+  }
 }
 
 /** 5枚揃い表示の hold + 勝者方向への吸い寄せアニメ尺(合計)。CSS と同期。 */

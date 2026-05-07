@@ -97,6 +97,24 @@ pub enum UpsertResult {
 }
 
 #[derive(Debug, Clone)]
+pub struct RoomSummary {
+    pub room_id: String,
+    pub host: String,
+    /// "Lobby" / "Playing" / "BetweenHands" / "Ended"
+    pub phase: String,
+    pub max_players: usize,
+    pub members: Vec<RoomSummaryMember>,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct RoomSummaryMember {
+    pub player_id: String,
+    pub display_name: String,
+    pub is_com: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct GamePlayerRow {
     pub email: String,
     pub handle: Option<String>,
@@ -263,6 +281,56 @@ impl Db {
             )
             .optional()
             .map_err(Into::into)
+        })
+        .await?
+    }
+
+    /// 一覧用の軽量サマリ。snapshot_json から必要なフィールドだけ取り出す。
+    pub async fn list_room_summaries(&self) -> Result<Vec<RoomSummary>> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<Vec<RoomSummary>> {
+            let conn = conn.lock().expect("db poisoned");
+            let mut stmt = conn.prepare(
+                "SELECT room_id, snapshot_json, updated_at FROM room_snapshots ORDER BY updated_at DESC",
+            )?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let summaries = rows
+                .into_iter()
+                .filter_map(|(room_id, json, updated_at)| {
+                    let v: serde_json::Value = serde_json::from_str(&json).ok()?;
+                    let host = v.get("host")?.as_str()?.to_string();
+                    let phase = v.get("phase")?.as_str()?.to_string();
+                    let max_players = v.get("max_players")?.as_u64().unwrap_or(5) as usize;
+                    let members_arr = v.get("members")?.as_array()?;
+                    let members: Vec<RoomSummaryMember> = members_arr
+                        .iter()
+                        .filter_map(|m| {
+                            Some(RoomSummaryMember {
+                                player_id: m.get("player_id")?.as_str()?.to_string(),
+                                display_name: m.get("display_name")?.as_str()?.to_string(),
+                                is_com: m.get("is_com").and_then(|x| x.as_bool()).unwrap_or(false),
+                            })
+                        })
+                        .collect();
+                    Some(RoomSummary {
+                        room_id,
+                        host,
+                        phase,
+                        max_players,
+                        members,
+                        updated_at,
+                    })
+                })
+                .collect();
+            Ok(summaries)
         })
         .await?
     }
