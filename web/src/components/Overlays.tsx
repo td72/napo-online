@@ -71,12 +71,16 @@ export function BidOverlay({
   for (let n = minTricks; n <= MAX_BID; n++) tickRange.push(n);
   return (
     <div style={overlayBase} data-testid="overlay-bid" data-my-turn={myTurn ? "true" : "false"}>
+      {/* 手札を見ながらビッドできるよう、下部 250px は backdrop で覆わない。 */}
       <div
         style={{
           position: "absolute",
-          inset: 0,
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 250,
           background:
-            "radial-gradient(ellipse at center, rgba(232,223,200,0.95) 0%, rgba(251,247,238,0.98) 80%)",
+            "radial-gradient(ellipse at center, rgba(232,223,200,0.92) 0%, rgba(251,247,238,0.96) 80%)",
           backdropFilter: "blur(3px)",
         }}
       />
@@ -142,7 +146,8 @@ export function BidOverlay({
       <div
         style={{
           position: "absolute",
-          inset: mobile ? "60px 8px 90px" : "90px 22px 22px",
+          // 下部に 250px 分のスペースを残して手札を見える化(PC)
+          inset: mobile ? "60px 8px 280px" : "90px 22px 270px",
           zIndex: 2,
         }}
       >
