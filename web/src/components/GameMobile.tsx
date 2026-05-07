@@ -47,7 +47,7 @@ export function GameMobile({
       }}
     >
       <PaperGrain />
-      {vm.phase === "turn" && <TurnHalo />}
+      {vm.phase === "turn" && vm.inPlay && <TurnHalo />}
 
       <TopBar vm={vm} />
       <PlayersRow vm={vm} />
@@ -68,7 +68,7 @@ export function GameMobile({
         {vm.trick.length > 0 ? <Field vm={vm} /> : <FieldIdle />}
       </div>
 
-      <TurnBanner phase={vm.phase} />
+      {vm.inPlay && <TurnBanner phase={vm.phase} />}
 
       {/* Hand */}
       <div

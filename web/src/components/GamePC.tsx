@@ -79,6 +79,11 @@ export interface GamePcViewModel {
   isNoTrump: boolean;
   /** 宣言枚数(13〜20)。 */
   bidValue: number;
+  /**
+   * 純粋な play phase(bidding / partner / widow を全部抜けた後)か。
+   * false の間は「カードを選んでください」等の play 関連 UI を出さない。
+   */
+  inPlay: boolean;
   /** ヘッダー情報。 */
   roomId: string;
   gameNo: number;
@@ -120,8 +125,8 @@ export function GamePC({ vm, selectedIdx, onSelectCard, onPlay }: GamePCProps) {
         }}
       />
 
-      {/* my-turn warm halo */}
-      {vm.phase === "turn" && (
+      {/* my-turn warm halo(bid/partner/widow 中は出さない) */}
+      {vm.phase === "turn" && vm.inPlay && (
         <div
           style={{
             position: "absolute",
@@ -191,31 +196,33 @@ export function GamePC({ vm, selectedIdx, onSelectCard, onPlay }: GamePCProps) {
           gap: 14,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "6px 18px",
-            background: vm.phase === "turn" ? "var(--accent-primary)" : "var(--bg-secondary)",
-            color: vm.phase === "turn" ? "#fff" : "var(--text-secondary)",
-            borderRadius: 99,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: 0.5,
-            boxShadow: vm.phase === "turn" ? "0 4px 12px rgba(217,83,79,0.35)" : "none",
-          }}
-        >
-          <span
+        {vm.inPlay && (
+          <div
             style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: vm.phase === "turn" ? "#fff" : "var(--text-muted)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "6px 18px",
+              background: vm.phase === "turn" ? "var(--accent-primary)" : "var(--bg-secondary)",
+              color: vm.phase === "turn" ? "#fff" : "var(--text-secondary)",
+              borderRadius: 99,
+              fontSize: 13,
+              fontWeight: 600,
+              letterSpacing: 0.5,
+              boxShadow: vm.phase === "turn" ? "0 4px 12px rgba(217,83,79,0.35)" : "none",
             }}
-          />
-          {vm.phase === "turn" ? "あなたのターン — カードを選んでください" : "相手のターンです…"}
-        </div>
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: vm.phase === "turn" ? "#fff" : "var(--text-muted)",
+              }}
+            />
+            {vm.phase === "turn" ? "あなたのターン — カードを選んでください" : "相手のターンです…"}
+          </div>
+        )}
 
         <Hand
           hand={vm.myHand}

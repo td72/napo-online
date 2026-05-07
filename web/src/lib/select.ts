@@ -93,6 +93,8 @@ export interface SelectInput {
    * App.tsx の state machine が completed 増分検知時に注入する。
    */
   trickAnim?: { plays: WirePlayedCard[]; winnerSeat: number } | null;
+  /** event ログ。inPlay 判定で adjutant_declared 既出かを見るのに使う。 */
+  events?: PublicEvent[];
 }
 
 /**
@@ -100,9 +102,25 @@ export interface SelectInput {
  * Bidding 中で declarer/bid 等が無い場合も partial で OK(BidOverlay 側で対応)。
  */
 export function selectGameVm(input: SelectInput): GamePcViewModel | null {
-  const { observation, seats, mySeat, hands_per_match, handIndex, disconnectedSeats, trickAnim } =
-    input;
+  const {
+    observation,
+    seats,
+    mySeat,
+    hands_per_match,
+    handIndex,
+    disconnectedSeats,
+    trickAnim,
+    events,
+  } = input;
   if (!observation || !seats || mySeat === null) return null;
+
+  // inPlay = bidding/partner/widow を全部抜けた = selectOverlayPhase が null。
+  // ここでは observation のみで近似:
+  //  - declarer null → bid 中
+  //  - visible_widow !== null → widow 中(declarer 視点)
+  //  - 上記以外で adjutant_declared が events に未到達なら partner 中(非 declarer も含む)
+  const overlayPhase = selectOverlayPhase(observation, events ?? []);
+  const inPlay = overlayPhase === null;
 
   const seatToName = new Map<number, string>();
   for (const s of seats) seatToName.set(s.seat, s.display_name);
@@ -166,6 +184,7 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
 
   return {
     phase: observation.to_act === mySeat ? "turn" : "wait",
+    inPlay,
     myHand: sortHand(observation.hand),
     myCaptured: captured[mySeat] ?? [],
     opponents,

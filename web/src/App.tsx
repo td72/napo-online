@@ -363,6 +363,7 @@ function GameStage({ layout }: { layout: "pc" | "mobile" }) {
     handIndex,
     disconnectedSeats,
     trickAnim,
+    events,
   });
   const overlay = selectOverlayPhase(observation, events);
   const myName = mySeatName({ seats, mySeat, myEmail });
@@ -896,6 +897,7 @@ function GamePreview() {
     ],
     trickPhase: "playing",
     trickWinnerPos: null,
+    inPlay: true,
     revealedFaceDiscards: [],
     leadSuit: "D",
     napoName: "ミナト",
