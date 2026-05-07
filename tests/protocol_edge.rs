@@ -219,21 +219,22 @@ async fn non_host_start_match_rejected() {
 }
 
 #[tokio::test]
-async fn abort_hand_rejected_when_nobody_disconnected() {
+async fn abort_hand_succeeds_when_nobody_in_grace_period() {
+    // 全員 online(grace period 中の human が居ない)時、AbortHand は通る。
     let port = spawn_server(Config::for_test()).await;
     let (mut clients, _) = five_connected_in_room(port).await;
     let _seats = start_match_and_collect(&mut clients).await;
 
-    // host が 何の disconnect も無いまま AbortHand → too_early
     send(&mut clients[0].0, &ClientMessage::AbortHand).await;
-    let m = wait_for(
-        &mut clients[0].1,
-        |m| matches!(m, ServerMessage::Error { code, .. } if code == "too_early"),
-    )
+    let _ = wait_for(&mut clients[0].1, |m| {
+        matches!(
+            m,
+            ServerMessage::Event {
+                event: PublicEvent::HandAborted
+            }
+        )
+    })
     .await;
-    if let ServerMessage::Error { code, .. } = m {
-        assert_eq!(code, "too_early");
-    }
 
     for (mut w, _) in clients {
         let _ = w.send(Message::Close(None)).await;
@@ -241,12 +242,35 @@ async fn abort_hand_rejected_when_nobody_disconnected() {
 }
 
 #[tokio::test]
-async fn end_match_rejected_when_nobody_disconnected() {
+async fn end_match_succeeds_when_nobody_in_grace_period() {
     let port = spawn_server(Config::for_test()).await;
     let (mut clients, _) = five_connected_in_room(port).await;
     let _seats = start_match_and_collect(&mut clients).await;
 
     send(&mut clients[0].0, &ClientMessage::EndMatch).await;
+    let _ = wait_for(&mut clients[0].1, |m| {
+        matches!(m, ServerMessage::MatchEnded { .. })
+    })
+    .await;
+
+    for (mut w, _) in clients {
+        let _ = w.send(Message::Close(None)).await;
+    }
+}
+
+#[tokio::test]
+async fn abort_hand_rejected_within_human_grace_period() {
+    // bob が直前に切断 → t3 grace period 中(< 200ms 経過後)は AbortHand 拒否。
+    let port = spawn_server(Config::for_test()).await;
+    let (mut clients, _) = five_connected_in_room(port).await;
+    let _seats = start_match_and_collect(&mut clients).await;
+
+    // bob 切断
+    let (bob_w, bob_r) = clients.remove(1);
+    drop(bob_w);
+    drop(bob_r);
+    // t3=200ms 未満ですぐ AbortHand
+    send(&mut clients[0].0, &ClientMessage::AbortHand).await;
     let m = wait_for(
         &mut clients[0].1,
         |m| matches!(m, ServerMessage::Error { code, .. } if code == "too_early"),

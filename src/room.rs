@@ -726,12 +726,12 @@ impl Room {
                 .await;
             return;
         }
-        if !self.any_seated_disconnect_exceeded(self.timers.t3_abort) {
+        if self.any_human_in_grace_period(self.timers.t3_abort) {
             self.send_to(
                 &by,
                 error(
                     "too_early",
-                    "AbortHand は T3 経過(切断したプレイヤーがいる場合)後のみ可能",
+                    "切断中プレイヤーの再接続待機(T3)が経過するまで AbortHand 不可",
                 ),
             )
             .await;
@@ -795,12 +795,12 @@ impl Room {
                 .await;
             return;
         }
-        if !self.any_seated_disconnect_exceeded(self.timers.t4_end) {
+        if self.any_human_in_grace_period(self.timers.t4_end) {
             self.send_to(
                 &by,
                 error(
                     "too_early",
-                    "EndMatch は T4 経過(切断したプレイヤーがいる場合)後のみ可能",
+                    "切断中プレイヤーの再接続待機(T4)が経過するまで EndMatch 不可",
                 ),
             )
             .await;
@@ -809,12 +809,16 @@ impl Room {
         self.end_match("ended_by_host").await;
     }
 
-    fn any_seated_disconnect_exceeded(&self, threshold: Duration) -> bool {
+    /// 「人間が切断 grace period 中(切断後 threshold 未満)」かどうか。
+    /// COM は常に Online 扱いなので除外。Host による AbortHand/EndMatch の gate 用。
+    /// 全員 online(COM のみ含む)の場合は false → 操作通過。
+    fn any_human_in_grace_period(&self, threshold: Duration) -> bool {
         let now = Instant::now();
         self.members.values().any(|m| {
-            m.conn == ConnState::Suspended
+            !m.is_com
+                && m.conn == ConnState::Suspended
                 && m.suspended_since
-                    .map(|i| now.duration_since(i) >= threshold)
+                    .map(|i| now.duration_since(i) < threshold)
                     .unwrap_or(false)
         })
     }
