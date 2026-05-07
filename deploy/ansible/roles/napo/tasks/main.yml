@@ -19,3 +19,12 @@
 
 - name: Cleanup legacy artifacts
   ansible.builtin.import_tasks: cleanup.yml
+
+- name: SSH hardening (key-only auth)
+  ansible.builtin.import_tasks: ssh.yml
+
+- name: Unattended security upgrades
+  ansible.builtin.import_tasks: unattended.yml
+
+- name: Daily SQLite backup
+  ansible.builtin.import_tasks: backup.yml

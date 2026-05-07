@@ -1,0 +1,27 @@
+---
+# SSH を鍵認証のみに絞る。
+# 注意:鍵で入れることを必ず先に検証してから実行する。設定ミスで締め出される
+# リスクあり。drop-in にするのは distro デフォルト sshd_config をなるべく
+# 触らないため。
+
+- name: Harden sshd via /etc/ssh/sshd_config.d drop-in
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/50-napo-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible — do not edit by hand.
+      PasswordAuthentication no
+      PubkeyAuthentication yes
+      PermitRootLogin no
+      PermitEmptyPasswords no
+      # 必要なら IP 制限を ufw 側で(ssh 22 を特定 IP のみ allow に絞る等)
+    validate: "sshd -t -f %s"
+  notify: Reload sshd
+
+- name: Ensure ssh service is running
+  ansible.builtin.systemd:
+    name: ssh
+    enabled: true
+    state: started

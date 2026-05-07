@@ -1,0 +1,42 @@
+---
+# 自動セキュリティアップデート。security リポジトリのみ install、深夜に
+# 再起動が必要なら自動で再起動(napo は systemd で auto-restart される)。
+
+- name: Ensure unattended-upgrades package is installed
+  ansible.builtin.apt:
+    name:
+      - unattended-upgrades
+      - apt-listchanges
+    state: present
+    update_cache: false
+
+- name: Enable periodic apt update / unattended-upgrade
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      // Managed by Ansible.
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+- name: Override unattended-upgrades to reboot at 04:00 if required
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/52unattended-upgrades-local
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      // Managed by Ansible.
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+- name: Ensure unattended-upgrades service is enabled
+  ansible.builtin.systemd:
+    name: unattended-upgrades
+    enabled: true
+    state: started

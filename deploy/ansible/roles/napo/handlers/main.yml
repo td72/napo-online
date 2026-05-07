@@ -17,3 +17,8 @@
     name: caddy
     state: reloaded
   failed_when: false
+
+- name: Reload sshd
+  ansible.builtin.systemd:
+    name: ssh
+    state: reloaded

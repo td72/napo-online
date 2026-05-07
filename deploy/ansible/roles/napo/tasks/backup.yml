@@ -1,0 +1,89 @@
+---
+# game.db を毎日 sqlite3 .backup でスナップショット → 14 日ローカル保持
+# + Cloudflare R2 にオフサイト upload(rclone 経由)。
+
+- name: Ensure sqlite3 is installed
+  ansible.builtin.apt:
+    name: sqlite3
+    state: present
+    update_cache: false
+
+# Ubuntu 24.04 の apt rclone は v1.60(2022)で R2 互換に難あり。
+# 公式 .deb から最新を入れる。
+- name: Get latest rclone .deb URL
+  ansible.builtin.set_fact:
+    rclone_deb_url: https://downloads.rclone.org/rclone-current-linux-amd64.deb
+
+- name: Download latest rclone .deb
+  ansible.builtin.get_url:
+    url: "{{ rclone_deb_url }}"
+    dest: /tmp/rclone-current.deb
+    mode: "0644"
+
+- name: Install rclone from .deb
+  ansible.builtin.apt:
+    deb: /tmp/rclone-current.deb
+
+- name: Remove rclone deb temp
+  ansible.builtin.file:
+    path: /tmp/rclone-current.deb
+    state: absent
+
+- name: Ensure backup dir exists
+  ansible.builtin.file:
+    path: "{{ napo_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Ensure /root/.config/rclone exists
+  ansible.builtin.file:
+    path: /root/.config/rclone
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Render rclone.conf with R2 remote
+  ansible.builtin.copy:
+    dest: /root/.config/rclone/rclone.conf
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      # Managed by Ansible.
+      [napo-r2]
+      type = s3
+      provider = Cloudflare
+      access_key_id = {{ napo_r2_access_key_id }}
+      secret_access_key = {{ napo_r2_secret_access_key }}
+      endpoint = https://{{ napo_r2_account_id }}.r2.cloudflarestorage.com
+      # rclone はデフォルトで upload 前に CreateBucket を試みるが、Object Read &
+      # Write token には CreateBucket 権限が無いので 403。bucket は CF dashboard
+      # で事前作成済みの前提なので check 自体を無効化。
+      no_check_bucket = true
+
+- name: Install daily backup script(local + R2)
+  ansible.builtin.copy:
+    dest: /etc/cron.daily/napo-backup
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      # Managed by Ansible.
+      set -eu
+      DAY=$(date +%Y%m%d)
+      LOCAL={{ napo_backup_dir }}/game-${DAY}.db
+
+      # 1. ライブ DB をトランザクション安全にスナップショット
+      mkdir -p {{ napo_backup_dir }}
+      sqlite3 {{ napo_db_path }} ".backup '${LOCAL}'"
+
+      # 2. ローカル古いやつを削除({{ napo_backup_retention_days }} 日 retention)
+      find {{ napo_backup_dir }} -name 'game-*.db' -mtime +{{ napo_backup_retention_days }} -delete
+
+      # 3. R2 にオフサイト upload(VPS 物理障害対策)
+      rclone copyto "${LOCAL}" \
+        "napo-r2:{{ napo_r2_bucket }}/$(date +%Y/%m)/game-${DAY}.db"
