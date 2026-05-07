@@ -180,20 +180,45 @@ function LobbyView() {
                 data-testid={`list-player-${p.player_id}`}
                 style={{ color: p.online ? undefined : "var(--text-muted)", fontSize: 13 }}
               >
-                {p.display_name} {p.seat !== null && `· seat${p.seat}`} {!p.online && "— offline"}
+                {p.display_name}
+                {p.is_com && (
+                  <span
+                    style={{
+                      marginLeft: 4,
+                      fontSize: 10,
+                      padding: "0 4px",
+                      borderRadius: 2,
+                      background: "var(--accent-secondary)",
+                      color: "white",
+                    }}
+                  >
+                    COM
+                  </span>
+                )}
+                {p.seat !== null && ` · seat${p.seat}`} {!p.online && !p.is_com && "— offline"}
               </li>
             ))}
           </ul>
           <div style={{ ...rowStyle, marginTop: 10 }}>
             {phaseType === "lobby" && isHost && (
-              <button
-                type="button"
-                onClick={() => send({ type: "start_match" })}
-                style={btnStyle}
-                data-testid="btn-start-match"
-              >
-                Start Match
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => send({ type: "add_com", payload: { display_name: "" } })}
+                  style={btnStyle}
+                  data-testid="btn-add-com"
+                >
+                  + COM 追加
+                </button>
+                <button
+                  type="button"
+                  onClick={() => send({ type: "start_match" })}
+                  style={btnStyle}
+                  data-testid="btn-start-match"
+                >
+                  Start Match
+                </button>
+              </>
             )}
             {phaseType === "between_hands" && (
               <button

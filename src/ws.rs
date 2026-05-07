@@ -304,6 +304,17 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
             )
             .await
         }
+        ClientMessage::AddCom { display_name } => {
+            forward_to_room(
+                socket,
+                session,
+                RoomCommand::AddCom {
+                    by: session.claims.email.clone(),
+                    display_name,
+                },
+            )
+            .await
+        }
     }
 }
 

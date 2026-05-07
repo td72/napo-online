@@ -186,6 +186,13 @@ impl GameSession {
         self.session.current_hand().current_player()
     }
 
+    /// COM(bot)が打つべき手を選ぶ。雑な戦略:legal_actions の先頭。
+    /// Bidding は legal_actions の先頭が必ず Pass なので「常に pass」になる。
+    pub fn pick_com_action(&self) -> Option<WireAction> {
+        let legal = self.session.current_hand().legal_actions();
+        legal.into_iter().next().as_ref().map(action_to_wire)
+    }
+
     pub fn seat_of(&self, player: &PlayerId) -> Option<usize> {
         self.player_to_seat.get(player).copied()
     }
@@ -448,6 +455,26 @@ pub fn wire_to_trump(t: WireTrump) -> Trump {
         WireTrump::D => Trump::Suit(Suit::Diamond),
         WireTrump::C => Trump::Suit(Suit::Club),
         WireTrump::NT => Trump::NoTrump,
+    }
+}
+
+/// core::Action → WireAction。
+pub fn action_to_wire(a: &Action) -> WireAction {
+    match a {
+        Action::Pass => WireAction::Pass,
+        Action::Bid(b) => WireAction::Bid {
+            tricks: b.tricks,
+            trump: trump_to_wire(b.trump),
+        },
+        Action::DeclareAdjutant(c) => WireAction::DeclareAdjutant {
+            card: card_to_wire(*c),
+        },
+        Action::ExchangeWidow { discard } => WireAction::ExchangeWidow {
+            discard: discard.iter().copied().map(card_to_wire).collect(),
+        },
+        Action::PlayCard(c) => WireAction::PlayCard {
+            card: card_to_wire(*c),
+        },
     }
 }
 

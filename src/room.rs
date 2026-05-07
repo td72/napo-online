@@ -37,6 +37,8 @@ pub const ROOM_SNAPSHOT_SCHEMA: u32 = 1;
 pub struct MemberSnapshot {
     pub player_id: PlayerId,
     pub display_name: String,
+    #[serde(default)]
+    pub is_com: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -95,6 +97,11 @@ pub enum RoomCommand {
         player: PlayerId,
         action: WireAction,
     },
+    /// host が COM を追加。
+    AddCom {
+        by: PlayerId,
+        display_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,12 +113,15 @@ enum ConnState {
 struct RoomMember {
     info: PlayerInfo,
     /// 生きている WS チャンネル。スナップショット復元直後は None(全員 Suspended で再接続待ち)。
+    /// COM の場合は常に None。
     sender: Option<mpsc::Sender<ServerMessage>>,
     conn: ConnState,
     /// Suspended になった時刻。T2/T3/T4 判定の起点。
     suspended_since: Option<Instant>,
     /// PlayerDisconnected を既にブロードキャスト済みか(T2 一度だけ通知用)
     notified_disconnect: bool,
+    /// COM(bot)プレイヤーかどうか。
+    is_com: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,6 +203,7 @@ impl Room {
                     conn: ConnState::Suspended,
                     suspended_since: Some(now),
                     notified_disconnect: false,
+                    is_com: m.is_com,
                 },
             );
         }
@@ -236,6 +247,7 @@ impl Room {
                 .map(|m| MemberSnapshot {
                     player_id: m.info.player_id.clone(),
                     display_name: m.info.display_name.clone(),
+                    is_com: m.is_com,
                 })
                 .collect(),
             phase: match self.phase {
@@ -341,6 +353,7 @@ impl Room {
             RoomCommand::NextHand { player } => self.on_next_hand(player).await,
             RoomCommand::AbortHand { by } => self.on_abort_hand(by).await,
             RoomCommand::EndMatch { by } => self.on_end_match(by).await,
+            RoomCommand::AddCom { by, display_name } => self.on_add_com(by, display_name).await,
         }
     }
 
@@ -399,9 +412,62 @@ impl Room {
                 conn: ConnState::Online,
                 suspended_since: None,
                 notified_disconnect: false,
+                is_com: false,
             },
         );
         tracing::info!(room = %self.id, player = %pid, "player joined");
+        self.broadcast_room_state().await;
+        self.persist().await;
+    }
+
+    async fn on_add_com(&mut self, by: PlayerId, display_name: String) {
+        if by != self.host {
+            self.send_to(&by, error("not_host", "only host can add COM"))
+                .await;
+            return;
+        }
+        if self.phase != LocalPhase::Lobby {
+            self.send_to(
+                &by,
+                error("wrong_phase", "COM can only be added in lobby"),
+            )
+            .await;
+            return;
+        }
+        if self.members.len() >= self.max_players {
+            self.send_to(&by, error("room_full", "no slot for COM"))
+                .await;
+            return;
+        }
+        // unique COM player_id を発行(com1, com2, ... 衝突しない番号)
+        let mut idx = 1usize;
+        let pid = loop {
+            let candidate = format!("com{idx}@local.napo.bot");
+            if !self.members.contains_key(&candidate) {
+                break candidate;
+            }
+            idx += 1;
+        };
+        let name = if display_name.trim().is_empty() {
+            format!("COM-{idx}")
+        } else {
+            display_name.trim().to_string()
+        };
+        self.members.insert(
+            pid.clone(),
+            RoomMember {
+                info: PlayerInfo {
+                    player_id: pid.clone(),
+                    display_name: name,
+                },
+                sender: None,
+                conn: ConnState::Online,
+                suspended_since: None,
+                notified_disconnect: false,
+                is_com: true,
+            },
+        );
+        tracing::info!(room = %self.id, com = %pid, "COM added");
         self.broadcast_room_state().await;
         self.persist().await;
     }
@@ -543,6 +609,7 @@ impl Room {
         }
         self.broadcast_room_state().await;
         self.persist().await;
+        self.drive_coms().await;
     }
 
     async fn on_submit_action(&mut self, player: PlayerId, action: WireAction) {
@@ -558,12 +625,59 @@ impl Room {
             Ok(outcome) => {
                 self.dispatch_outcome(outcome).await;
                 self.persist().await;
+                self.drive_coms().await;
             }
             Err(e) => {
                 self.send_to(&player, error("invalid_action", &e.to_string()))
                     .await;
             }
         }
+    }
+
+    /// 次の to_act が COM プレイヤーである限り、ディレイ付きで自動的に手を打つ。
+    /// 1 回 step を踏むごとに dispatch_outcome を流すので、各 COM の手が
+    /// observation 経由で全クライアントに届く。
+    async fn drive_coms(&mut self) {
+        // 安全のため最大ステップ数で打ち切り(無限ループ予防)
+        for _ in 0..200 {
+            // 次に行動すべき seat を取得
+            let Some(session) = self.session.as_ref() else {
+                return;
+            };
+            let Some(seat) = session.current_player() else {
+                return;
+            };
+            let Some(pid) = session.seat_to_player().get(seat).cloned() else {
+                return;
+            };
+            // COM じゃなければ抜ける(人間に手番を返す)
+            let Some(member) = self.members.get(&pid) else {
+                return;
+            };
+            if !member.is_com {
+                return;
+            }
+            // 視覚的に分かるようにディレイ
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            // 現在 phase に対する legal action の先頭を選ぶ
+            let Some(wire) = session.pick_com_action() else {
+                tracing::warn!(room = %self.id, com = %pid, "COM no legal action; bail");
+                return;
+            };
+            // apply
+            let session_mut = self.session.as_mut().unwrap();
+            match session_mut.apply(&pid, wire) {
+                Ok(outcome) => {
+                    self.dispatch_outcome(outcome).await;
+                    self.persist().await;
+                }
+                Err(e) => {
+                    tracing::error!(room = %self.id, com = %pid, error = %e, "COM apply failed");
+                    return;
+                }
+            }
+        }
+        tracing::warn!(room = %self.id, "drive_coms hit step cap");
     }
 
     async fn on_next_hand(&mut self, player: PlayerId) {
@@ -593,6 +707,7 @@ impl Room {
                 self.current_hand_started_at = Some(now_unix());
                 self.dispatch_outcome(out).await;
                 self.persist().await;
+                self.drive_coms().await;
             }
             Err(e) => {
                 tracing::error!(room = %self.id, error = %e, "start_next_hand failed");
@@ -814,7 +929,8 @@ impl Room {
                     .session
                     .as_ref()
                     .and_then(|s| s.seat_of(&m.info.player_id)),
-                online: m.conn == ConnState::Online,
+                online: m.conn == ConnState::Online || m.is_com,
+                is_com: m.is_com,
             })
             .collect();
         players.sort_by(|a, b| a.player_id.cmp(&b.player_id));

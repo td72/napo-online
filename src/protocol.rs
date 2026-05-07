@@ -26,6 +26,8 @@ pub enum ClientMessage {
     StartMatch,
     AbortHand,
     EndMatch,
+    /// COM(bot)プレイヤーを追加。ロビー期間中、host のみ。
+    AddCom { display_name: String },
 
     // 全員操作
     NextHand,
@@ -237,6 +239,9 @@ pub struct PlayerView {
     pub display_name: String,
     pub seat: Option<usize>,
     pub online: bool,
+    /// COM(bot)プレイヤーかどうか。WS は持たず、サーバ側 driver が手を打つ。
+    #[serde(default)]
+    pub is_com: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
@@ -312,6 +317,7 @@ mod tests {
                     display_name: "alice".into(),
                     seat: None,
                     online: true,
+                    is_com: false,
                 }],
                 state: RoomPhase::Lobby,
             },
