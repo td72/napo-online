@@ -540,7 +540,7 @@ function Field({ vm }: { vm: GamePcViewModel }) {
                 left: baseX - 26,
                 top: baseY - 39,
                 animation: isGather
-                  ? "gather-out 1000ms var(--ease-default) forwards"
+                  ? "gather-out 1000ms var(--ease-default) 700ms forwards"
                   : "card-land 500ms var(--ease-bounce) backwards",
                 zIndex: p.winner ? 10 : 5,
                 filter: "drop-shadow(0 4px 6px rgba(43,38,32,0.12))",

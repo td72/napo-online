@@ -29,17 +29,24 @@ import type { WirePlayedCard, WireTrump } from "./types";
 
 function App() {
   const observation = useStore((s) => s.observation);
+  const [layout, setLayout] = useState<"pc" | "mobile">("pc");
 
   return (
     <div style={pageStyle}>
-      <Header />
-      {observation ? <GameStage /> : <LobbyView />}
+      <Header layout={layout} setLayout={setLayout} />
+      {observation ? <GameStage layout={layout} /> : <LobbyView />}
       <DevPreview />
     </div>
   );
 }
 
-function Header() {
+function Header({
+  layout,
+  setLayout,
+}: {
+  layout: "pc" | "mobile";
+  setLayout: (v: "pc" | "mobile") => void;
+}) {
   const status = useStore((s) => s.status);
   const myEmail = useStore((s) => s.myEmail);
   const myHandle = useStore((s) => s.myHandle);
@@ -75,6 +82,25 @@ function Header() {
         <span style={{ color: "var(--text-muted)", fontSize: 11 }}>server v{serverVersion}</span>
       )}
       <span style={{ flex: 1 }} />
+      <div style={{ display: "flex", gap: 4 }}>
+        {(["pc", "mobile"] as const).map((v) => (
+          <button
+            type="button"
+            key={v}
+            onClick={() => setLayout(v)}
+            style={{
+              ...btnStyle,
+              padding: "4px 10px",
+              fontSize: 11,
+              background: layout === v ? "var(--accent-secondary)" : "transparent",
+              color: layout === v ? "#fff" : "var(--text-primary)",
+              border: "1px solid var(--border-color)",
+            }}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
       {status !== "disconnected" && (
         <button type="button" onClick={disconnect} style={btnStyle}>
           切断
@@ -278,10 +304,12 @@ function LobbyView() {
   );
 }
 
-/** 勝者方向への吸い寄せアニメ尺。CSS gather-out と同期。 */
-const TRICK_GATHER_DURATION_MS = 1200;
+/** 5枚揃い表示の hold + 勝者方向への吸い寄せアニメ尺(合計)。CSS と同期。 */
+const TRICK_HOLD_DURATION_MS = 700;
+const TRICK_GATHER_ANIM_MS = 1000;
+const TRICK_GATHER_DURATION_MS = TRICK_HOLD_DURATION_MS + TRICK_GATHER_ANIM_MS;
 
-function GameStage() {
+function GameStage({ layout }: { layout: "pc" | "mobile" }) {
   const observation = useStore((s) => s.observation);
   const room = useStore((s) => s.room);
   const seats = useStore((s) => s.seats);
@@ -297,7 +325,6 @@ function GameStage() {
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [selectedTricks, setSelectedTricks] = useState(13);
   const [selectedTrump, setSelectedTrump] = useState<WireTrump>("S");
-  const [layout, setLayout] = useState<"pc" | "mobile">("pc");
   const [trickAnim, setTrickAnim] = useState<{
     plays: WirePlayedCard[];
     winnerSeat: number;
@@ -385,23 +412,6 @@ function GameStage() {
       data-trick-anim={trickAnim ? "true" : "false"}
       data-room-phase={room?.state.type ?? "unknown"}
     >
-      <div style={{ display: "flex", gap: 8, marginBottom: 8, justifyContent: "center" }}>
-        {(["pc", "mobile"] as const).map((v) => (
-          <button
-            type="button"
-            key={v}
-            onClick={() => setLayout(v)}
-            style={{
-              ...btnStyle,
-              background: layout === v ? "var(--accent-secondary)" : "transparent",
-              color: layout === v ? "#fff" : "var(--text-primary)",
-              border: "1px solid var(--border-color)",
-            }}
-          >
-            {v}
-          </button>
-        ))}
-      </div>
       <div
         style={{
           display: "flex",

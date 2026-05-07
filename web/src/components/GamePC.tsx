@@ -610,8 +610,9 @@ function Trick({ vm }: { vm: GamePcViewModel }) {
               position: "absolute",
               left: baseX - cw / 2,
               top: baseY - ch / 2,
+              // gather 中: 5 枚揃い表示を 700ms hold した後に 1000ms 吸い寄せ。
               animation: isGather
-                ? "gather-out 1000ms var(--ease-default) forwards"
+                ? "gather-out 1000ms var(--ease-default) 700ms forwards"
                 : "card-land 500ms var(--ease-bounce) backwards",
               zIndex: z,
               filter:

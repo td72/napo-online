@@ -719,6 +719,9 @@ impl Room {
                 self.phase = LocalPhase::Playing;
                 self.current_hand_started_at = Some(now_unix());
                 self.dispatch_outcome(out).await;
+                // BetweenHands → Playing の遷移を client にも伝える(これが無いと
+                // EndOverlay が消えず、新局の BidOverlay が裏に隠れる)
+                self.broadcast_room_state().await;
                 self.persist().await;
                 self.drive_coms().await;
             }
