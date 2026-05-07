@@ -9,18 +9,27 @@
 all:
   hosts:
     napo:
-      ansible_host: napo.example.com           # ← VPS のホスト名 / IP
-      ansible_user: ubuntu                     # ← SSH ログインユーザ
-      ansible_port: 22
+      ansible_host: sakura
+      # ansible_user: ubuntu
+      # ansible_port: 22
       # ansible_ssh_private_key_file: ~/.ssh/napo_deploy
   vars:
     # --- ドメイン / Caddy ---
-    napo_domain: napo.example.com              # ← 実ドメイン
-    napo_caddy_email: you@example.com          # ← Let's Encrypt 通知用
+    napo_domain: napo.td72.dev # ← 実ドメイン
+    napo_caddy_email: REDACTED@example.com # ← Let's Encrypt 通知用
 
     # --- Cloudflare Access ---
-    napo_cf_team: tedsum.cloudflareaccess.com  # ← CF Access team domain
-    napo_cf_aud: REPLACE_ME                    # ← CF Access App AUD(vault 推奨)
+    napo_cf_team: td72.cloudflareaccess.com  # ← CF Access team domain
+    napo_cf_aud: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      64323937386566643065663066616137353831363931343562316364306333656365373430343162
+      3031336539653266613665333263343265353465333762350a396237363033386364323964323161
+      36666336356463376565393561383163306164376337343538333634373365303762633064373731
+      3963636632656333360a616432353139653365356334376636656364613132316135653764376232
+      35323761633262383438316665373866383561383466666439343434383334316463663164623565
+      64626462383263633836326462633032626637313930663439393439623036353835633862326163
+      32336637313862333136323833313165383933313331353461343062323932376132656162383466
+      35313134666536626666
 
     # --- 動作設定 ---
     napo_dev_mode: false
@@ -41,3 +50,6 @@ all:
     napo_config_dir: /etc/napo
     napo_db_path: /var/lib/napo/game.db
     napo_static_dir: /opt/napo/dist
+    # Caddy が読む cert/key の VPS 上の配置先
+    napo_tls_cert_path: /etc/ssl/caddy/napo-origin.crt
+    napo_tls_key_path: /etc/ssl/caddy/napo-origin.key

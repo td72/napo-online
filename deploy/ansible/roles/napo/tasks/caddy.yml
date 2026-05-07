@@ -6,8 +6,21 @@
     owner: caddy
     group: caddy
     mode: "0755"
-  # Caddy がインストールされていない場合は warn だけして続行
-  ignore_errors: true
+
+# Cloudflare Origin Certificate(cert + key)は VPS に手動配置する前提。
+# ansible で配るとローカル ファイルの有無 = 冪等性が崩れるため。
+# 期待配置: napo_tls_cert_path / napo_tls_key_path(README 参照)
+- name: Verify Cloudflare Origin Certificate (cert)
+  ansible.builtin.stat:
+    path: "{{ napo_tls_cert_path }}"
+  register: tls_cert_stat
+  failed_when: not tls_cert_stat.stat.exists
+
+- name: Verify Cloudflare Origin Certificate (key)
+  ansible.builtin.stat:
+    path: "{{ napo_tls_key_path }}"
+  register: tls_key_stat
+  failed_when: not tls_key_stat.stat.exists
 
 - name: Render /etc/caddy/Caddyfile
   ansible.builtin.template:
@@ -18,3 +31,9 @@
     mode: "0644"
     backup: true
   notify: Reload caddy
+
+- name: Ensure caddy service is enabled and running
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started

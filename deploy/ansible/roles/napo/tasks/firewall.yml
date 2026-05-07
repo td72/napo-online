@@ -1,0 +1,57 @@
+---
+# UFW で 80/443 を Cloudflare IP range からのみ受け付ける。
+# CF Proxy 経由でしか届かないので、原則 origin(VPS の直 IP)からの 80/443 は来ない。
+# 既知のスキャン / 攻撃を ufw で物理的に弾く。
+#
+# 注意: SSH (22) は誰からでも allow しておく。CF IP のみにすると管理者(自分)が
+# 締め出される。
+
+- name: Ensure ufw is installed
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: false
+
+- name: Allow SSH (22/tcp) before enabling ufw
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    comment: ssh
+
+- name: Fetch Cloudflare IPv4 range list
+  ansible.builtin.uri:
+    url: https://www.cloudflare.com/ips-v4
+    return_content: true
+  register: cf_ipv4
+  changed_when: false
+
+- name: Fetch Cloudflare IPv6 range list
+  ansible.builtin.uri:
+    url: https://www.cloudflare.com/ips-v6
+    return_content: true
+  register: cf_ipv6
+  changed_when: false
+
+- name: Allow Cloudflare IP ranges to 80/443
+  community.general.ufw:
+    rule: allow
+    src: "{{ item.0 }}"
+    port: "{{ item.1 }}"
+    proto: tcp
+    comment: "cloudflare"
+  loop: "{{ (cf_ipv4.content.split('\n') + cf_ipv6.content.split('\n')) | reject('equalto', '') | list | product(['80', '443']) | list }}"
+  loop_control:
+    label: "{{ item.0 }} → {{ item.1 }}"
+
+- name: Set default policies (deny incoming, allow outgoing)
+  community.general.ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+
+- name: Enable ufw
+  community.general.ufw:
+    state: enabled

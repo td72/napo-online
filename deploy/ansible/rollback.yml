@@ -1,0 +1,26 @@
+# napo-online のバイナリを .prev にロールバック。
+
+- name: Rollback napo binary to .prev
+  hosts: napo
+  become: true
+  tasks:
+    - name: Verify .prev exists
+      ansible.builtin.stat:
+        path: /opt/napo/napo-online.prev
+      register: prev_stat
+      failed_when: not prev_stat.stat.exists
+
+    - name: Move current binary to .broken
+      ansible.builtin.command: mv -f /opt/napo/napo-online /opt/napo/napo-online.broken
+      args:
+        removes: /opt/napo/napo-online
+
+    - name: Restore .prev
+      ansible.builtin.command: mv /opt/napo/napo-online.prev /opt/napo/napo-online
+      args:
+        creates: /opt/napo/napo-online
+
+    - name: Restart napo
+      ansible.builtin.systemd:
+        name: napo
+        state: restarted

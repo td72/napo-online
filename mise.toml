@@ -122,64 +122,25 @@ run = "cargo build --release --target x86_64-unknown-linux-musl"
 # ------------------------------------------------------------------------------
 
 [tasks.deploy]
-description = "フルデプロイ: web build + binary cross-build + 両方転送 + restart"
-depends = ["deploy:web", "build:release"]
-run = '''
-HOST="${HOST:-ubuntu@napo.example.com}"
-PORT="${PORT:-22}"
-TARGET="x86_64-unknown-linux-musl"
-scp -P "$PORT" "target/$TARGET/release/napo-online" "$HOST:/tmp/"
-ssh -p "$PORT" "$HOST" '
-  sudo install -m 755 -o napo -g napo \
-      /tmp/napo-online /opt/napo/napo-online.new && \
-  sudo mv -f /opt/napo/napo-online /opt/napo/napo-online.prev 2>/dev/null || true && \
-  sudo mv /opt/napo/napo-online.new /opt/napo/napo-online && \
-  sudo systemctl restart napo
-'
-'''
+description = "フルデプロイ: web build + binary cross-build + ansible で転送 + restart"
+depends = ["web:build", "build:release"]
+# Ansible が --ask-become-pass で sudo password を 1 回だけ求めて以降を保持する。
+# NOPASSWD sudoers は使わない。
+run = "ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/deploy.yml --ask-vault-pass --ask-become-pass"
 
 [tasks."deploy:bin"]
-description = "binary だけ転送(web 変更なし時)"
+description = "binary だけ更新(web 変更なし時)。深い意味で一緒なので deploy と同じ playbook を使う"
 depends = ["build:release"]
-run = '''
-HOST="${HOST:-ubuntu@napo.example.com}"
-PORT="${PORT:-22}"
-TARGET="x86_64-unknown-linux-musl"
-scp -P "$PORT" "target/$TARGET/release/napo-online" "$HOST:/tmp/"
-ssh -p "$PORT" "$HOST" '
-  sudo install -m 755 -o napo -g napo \
-      /tmp/napo-online /opt/napo/napo-online.new && \
-  sudo mv -f /opt/napo/napo-online /opt/napo/napo-online.prev 2>/dev/null || true && \
-  sudo mv /opt/napo/napo-online.new /opt/napo/napo-online && \
-  sudo systemctl restart napo
-'
-'''
+run = "ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/deploy.yml --ask-vault-pass --ask-become-pass --skip-tags=web"
 
 [tasks."deploy:web"]
-description = "Web bundle のみ本番に転送 (/opt/napo/dist/)"
+description = "Web bundle だけ更新"
 depends = ["web:build"]
-run = '''
-HOST="${HOST:-ubuntu@napo.example.com}"
-PORT="${PORT:-22}"
-rsync -avz --delete -e "ssh -p $PORT" static/dist/ "$HOST:/tmp/napo-dist/"
-ssh -p "$PORT" "$HOST" '
-  sudo rm -rf /opt/napo/dist && \
-  sudo mv /tmp/napo-dist /opt/napo/dist && \
-  sudo chown -R napo:napo /opt/napo/dist
-'
-'''
+run = "ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/deploy.yml --ask-vault-pass --ask-become-pass --skip-tags=binary"
 
 [tasks."deploy:rollback"]
-description = ".prev に戻す(バイナリのみ。web は別途巻き戻し)"
-run = '''
-HOST="${HOST:-ubuntu@napo.example.com}"
-PORT="${PORT:-22}"
-ssh -p "$PORT" "$HOST" '
-  sudo mv /opt/napo/napo-online /opt/napo/napo-online.broken && \
-  sudo mv /opt/napo/napo-online.prev /opt/napo/napo-online && \
-  sudo systemctl restart napo
-'
-'''
+description = ".prev に戻す(バイナリのみ)"
+run = "ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/rollback.yml --ask-vault-pass --ask-become-pass"
 
 # ------------------------------------------------------------------------------
 # Ops
@@ -190,7 +151,7 @@ description = "本番 journalctl を tail"
 run = '''
 HOST="${HOST:-ubuntu@napo.example.com}"
 PORT="${PORT:-22}"
-ssh -p "$PORT" "$HOST" 'sudo journalctl -u napo -f'
+ssh -t -p "$PORT" "$HOST" 'sudo journalctl -u napo -f'
 '''
 
 [tasks.health]

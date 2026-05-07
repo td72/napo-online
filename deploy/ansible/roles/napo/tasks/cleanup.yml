@@ -1,0 +1,7 @@
+---
+# 過去に NOPASSWD sudoers を入れていた場合は必ず削除する。
+
+- name: Remove legacy NOPASSWD sudoers if present
+  ansible.builtin.file:
+    path: /etc/sudoers.d/napo-deploy
+    state: absent

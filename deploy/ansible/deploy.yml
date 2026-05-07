@@ -1,0 +1,117 @@
+# napo binary + web bundle をデプロイする playbook。
+#
+# - ローカルで build 済みであること(mise run web:build / mise run build:release)
+# - --ask-become-pass で sudo password を 1 度だけ入力 → ansible が保持して全
+#   ステップで使う。NOPASSWD は不要。
+#
+# 使い方:
+#   ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/deploy.yml \
+#       --ask-vault-pass --ask-become-pass
+
+- name: Deploy napo-online (binary + web bundle)
+  hosts: napo
+  become: true
+  vars:
+    target_triple: x86_64-unknown-linux-musl
+    local_dist_dir: "{{ playbook_dir }}/../../static/dist/"
+    local_binary: "{{ playbook_dir }}/../../target/{{ target_triple }}/release/napo-online"
+  tasks:
+    - name: Verify local binary exists (run `mise run build:release` first)
+      ansible.builtin.stat:
+        path: "{{ local_binary }}"
+      delegate_to: localhost
+      become: false
+      register: bin_stat
+      failed_when: not bin_stat.stat.exists
+      tags: [binary]
+
+    - name: Verify local web bundle exists (run `mise run web:build` first)
+      ansible.builtin.stat:
+        path: "{{ local_dist_dir }}/index.html"
+      delegate_to: localhost
+      become: false
+      register: dist_stat
+      failed_when: not dist_stat.stat.exists
+      tags: [web]
+
+    # synchronize は SSH ユーザ(ubuntu)権限で動くので /opt/napo/dist には直接書けない。
+    # 一旦 /tmp/napo-dist/ に rsync してから、root 権限で /opt/napo/dist に置き換える。
+    - name: Stage web bundle in /tmp/napo-dist (rsync, --delete)
+      ansible.posix.synchronize:
+        src: "{{ local_dist_dir }}"
+        dest: /tmp/napo-dist/
+        delete: true
+        recursive: true
+        rsync_opts:
+          - "--no-owner"
+          - "--no-group"
+      become: false
+      tags: [web]
+
+    - name: Replace /opt/napo/dist with staged bundle (atomic-ish)
+      ansible.builtin.shell: |
+        set -e
+        rm -rf /opt/napo/dist
+        mv /tmp/napo-dist /opt/napo/dist
+      args:
+        executable: /bin/bash
+      changed_when: true
+      tags: [web]
+
+    - name: Ensure /opt/napo/dist は napo:napo 所有
+      ansible.builtin.file:
+        path: /opt/napo/dist
+        owner: napo
+        group: napo
+        recurse: true
+        state: directory
+      tags: [web]
+
+    - name: Upload napo binary to staging area
+      ansible.builtin.copy:
+        src: "{{ local_binary }}"
+        dest: /tmp/napo-online
+        mode: "0755"
+      tags: [binary]
+
+    - name: Backup current binary as .prev (atomic-ish rollout)
+      ansible.builtin.command: mv -f /opt/napo/napo-online /opt/napo/napo-online.prev
+      args:
+        removes: /opt/napo/napo-online   # 旧 binary が無い初回は no-op
+      changed_when: true
+      tags: [binary]
+
+    - name: Install new binary at /opt/napo/napo-online
+      ansible.builtin.copy:
+        src: /tmp/napo-online
+        dest: /opt/napo/napo-online
+        remote_src: true
+        owner: napo
+        group: napo
+        mode: "0755"
+      tags: [binary]
+
+    - name: Remove staging file
+      ansible.builtin.file:
+        path: /tmp/napo-online
+        state: absent
+      tags: [binary]
+
+    - name: Restart napo
+      ansible.builtin.systemd:
+        name: napo
+        state: restarted
+        daemon_reload: false
+
+    - name: Wait for napo to listen on 127.0.0.1:8080
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8080
+        timeout: 30
+
+    - name: Health check via /healthz
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/healthz
+        status_code: 200
+      retries: 5
+      delay: 2

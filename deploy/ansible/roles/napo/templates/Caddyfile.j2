@@ -1,11 +1,18 @@
 # Managed by Ansible — do not edit by hand.
 # {{ ansible_managed }}
 
+# Cloudflare Origin Certificate を使う(ACME は CF Proxy + UFW CF allowlist の制約で
+# 使えない)。CF SSL/TLS Mode を "Full (strict)" に設定する前提。
+
 {
-    email {{ napo_caddy_email }}
+    # ACME を完全に無効化(LE/ZeroSSL ともに使わない)
+    auto_https off
+    # admin off
 }
 
-{{ napo_domain }} {
+{{ napo_domain }}:443 {
+    tls {{ napo_tls_cert_path }} {{ napo_tls_key_path }}
+
     encode zstd gzip
 
     reverse_proxy 127.0.0.1:8080 {

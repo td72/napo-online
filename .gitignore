@@ -33,3 +33,6 @@ web/test-results/
 web/playwright-report/
 web/playwright/.cache/
 /tmp/napo-e2e.db*
+
+# mise local override(個人ごとの HOST 設定など、コミットしない)
+.mise.local.toml
