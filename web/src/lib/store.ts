@@ -14,7 +14,7 @@ import type {
   WireObservation,
 } from "../types";
 
-export type ConnectionStatus = "disconnected" | "connecting" | "connected";
+export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
 
 const PING_INTERVAL_MS = 30_000;
 const MAX_EVENT_LOG = 200;
@@ -71,6 +71,74 @@ interface AppState {
 let socket: ReturnType<typeof openWebSocket> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 
+// 再接続の管理(モジュール内 state)。disconnect() でユーザーが明示切断したら止める。
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
+let userInitiatedClose = false;
+let lastConnectParams: { displayName: string; devEmail?: string } | null = null;
+const RECONNECT_MAX_ATTEMPTS = 10;
+const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 15000, 30000] as const;
+function reconnectDelayMs(attempt: number): number {
+  const idx = Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1);
+  return RECONNECT_BACKOFF_MS[idx];
+}
+
+type SetFn = (partial: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void;
+type GetFn = () => AppState;
+
+/**
+ * WS を開いてハンドラを張る。connect() からも自動再接続パスからも呼ばれる。
+ * 自動再接続カウンタ(reconnectAttempt)等は呼び出し側で管理する。
+ */
+function openWsSession(set: SetFn, get: GetFn, displayName: string, devEmail?: string) {
+  if (socket) {
+    socket.close();
+    socket = null;
+  }
+  set({
+    status: reconnectAttempt > 0 ? "reconnecting" : "connecting",
+  });
+  const url = buildWsUrl(devEmail);
+  socket = openWebSocket(url, {
+    onOpen: () => {
+      reconnectAttempt = 0;
+      set({ status: "connected" });
+      socket?.send({ type: "hello", payload: { display_name: displayName } });
+      if (pingTimer) clearInterval(pingTimer);
+      pingTimer = setInterval(() => {
+        socket?.send({ type: "ping" });
+      }, PING_INTERVAL_MS);
+    },
+    onClose: () => {
+      if (pingTimer) {
+        clearInterval(pingTimer);
+        pingTimer = null;
+      }
+      if (userInitiatedClose || !lastConnectParams) {
+        set({ status: "disconnected" });
+        return;
+      }
+      if (reconnectAttempt >= RECONNECT_MAX_ATTEMPTS) {
+        console.warn("[ws] reconnect: max attempts reached, giving up");
+        set({ status: "disconnected" });
+        return;
+      }
+      const delay = reconnectDelayMs(reconnectAttempt);
+      reconnectAttempt++;
+      console.info(`[ws] reconnect attempt ${reconnectAttempt} in ${delay}ms`);
+      set({ status: "reconnecting" });
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (lastConnectParams) {
+          openWsSession(set, get, lastConnectParams.displayName, lastConnectParams.devEmail);
+        }
+      }, delay);
+    },
+    onMessage: (msg) => handleServerMessage(msg, set, get),
+    onError: (e) => console.error("ws error", e),
+  });
+}
+
 export const useStore = create<AppState>((set, get) => ({
   status: "disconnected",
   myEmail: null,
@@ -91,33 +159,15 @@ export const useStore = create<AppState>((set, get) => ({
   errors: [],
 
   connect: (displayName, devEmail) => {
-    if (socket) {
-      socket.close();
-      socket = null;
+    // ユーザー操作の connect。自動再接続ステートをリセット。
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
     }
-    set({ status: "connecting" });
-    const url = buildWsUrl(devEmail);
-    socket = openWebSocket(url, {
-      onOpen: () => {
-        set({ status: "connected" });
-        // Hello → server が users に upsert
-        socket?.send({ type: "hello", payload: { display_name: displayName } });
-        // 30秒 Ping
-        if (pingTimer) clearInterval(pingTimer);
-        pingTimer = setInterval(() => {
-          socket?.send({ type: "ping" });
-        }, PING_INTERVAL_MS);
-      },
-      onClose: () => {
-        if (pingTimer) {
-          clearInterval(pingTimer);
-          pingTimer = null;
-        }
-        set({ status: "disconnected" });
-      },
-      onMessage: (msg) => handleServerMessage(msg, set, get),
-      onError: (e) => console.error("ws error", e),
-    });
+    reconnectAttempt = 0;
+    userInitiatedClose = false;
+    lastConnectParams = { displayName, devEmail };
+    openWsSession(set, get, displayName, devEmail);
   },
 
   setHandle: (handle) => set({ myHandle: handle }),
@@ -135,6 +185,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   disconnect: () => {
+    userInitiatedClose = true;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectAttempt = 0;
     if (pingTimer) {
       clearInterval(pingTimer);
       pingTimer = null;

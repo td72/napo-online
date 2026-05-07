@@ -1103,7 +1103,7 @@ function badgeStyle(status: string): React.CSSProperties {
   const color =
     status === "connected"
       ? "var(--accent-success)"
-      : status === "connecting"
+      : status === "connecting" || status === "reconnecting"
         ? "var(--accent-warning)"
         : "var(--text-muted)";
   return {
