@@ -65,46 +65,33 @@ export function isBottomHalf(y: number): boolean {
 }
 
 /**
- * 同色 suit。trump=S→ura は同色 C、trump=H→D、など napo-core の urajack 計算に対応。
- */
-const SAME_COLOR: Record<SuitKey, SuitKey> = { S: "C", C: "S", H: "D", D: "H" };
-
-/**
- * 切り札スートと裏 J ルールを考慮した「lead suit」を返す。NT trump や leadCard が
- * null の場合は単純に表面 suit を返す。
+ * lead suit を返す。napo-core v0.2.0 以降は単純に先頭カードの表面スート。
+ * (旧仕様では 裏J/正J が lead した場合に切り札スート扱いだったが廃止)
  */
 export function effectiveLeadSuit(
   leadCard: string | undefined,
-  trumpSuit: SuitKey | null,
-  isNoTrump: boolean,
+  _trumpSuit: SuitKey | null,
+  _isNoTrump: boolean,
 ): SuitKey | null {
   if (!leadCard) return null;
   const surface = leadCard[0] as SuitKey;
   if (!SUITS[surface]) return null;
-  if (isNoTrump || !trumpSuit) return surface;
-  // sei-jack(trump 同 suit の J)/ ura-jack(同色 suit の J)→ trump suit lead 扱い
-  const seiJ = trumpSuit + "J";
-  const uraJ = SAME_COLOR[trumpSuit] + "J";
-  if (leadCard === seiJ || leadCard === uraJ) return trumpSuit;
   return surface;
 }
 
 /**
- * 「この card は lead suit に属するか」を裏 J ルール込みで判定。
- * lead が S で trump=S の場合、CJ(=urajack)も S 扱い。
+ * 「この card は lead suit に属するか」(マスト・フォロー判定)。
+ * napo-core v0.2.0 以降は **表面スート** のみで判定する(裏J/正J も例外なし)。
+ * trumpSuit / isNoTrump 引数は将来の拡張用に残してあるが現在は未使用。
  */
 export function belongsToLead(
   card: string,
   leadSuit: SuitKey,
-  trumpSuit: SuitKey | null,
-  isNoTrump: boolean,
+  _trumpSuit: SuitKey | null,
+  _isNoTrump: boolean,
 ): boolean {
   if (card === "JK") return false;
   const surface = card[0] as SuitKey;
-  if (isNoTrump || !trumpSuit) return surface === leadSuit;
-  const seiJ = trumpSuit + "J";
-  const uraJ = SAME_COLOR[trumpSuit] + "J";
-  if (card === seiJ || card === uraJ) return leadSuit === trumpSuit;
   return surface === leadSuit;
 }
 
