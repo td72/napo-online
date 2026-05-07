@@ -626,6 +626,7 @@ function PartnerStageOverlay({ mySeat, mobile }: { mySeat: number; mobile?: bool
               onConfirm: () => {
                 if (picked) submitAction({ type: "declare_adjutant", payload: { card: picked } });
               },
+              myHand: observation.hand,
             }
           : undefined
       }

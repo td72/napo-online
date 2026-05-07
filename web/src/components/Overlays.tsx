@@ -388,6 +388,8 @@ export interface PartnerOverlayProps {
     selectedCard: string | null;
     onSelect: (card: string) => void;
     onConfirm: () => void;
+    /** declarer が持っているカード(これらは指名不可)。 */
+    myHand: readonly string[];
   };
 }
 
@@ -395,6 +397,7 @@ const RANKS_DESC = ["A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3",
 
 export function PartnerOverlay({ mobile, declarerName, picker }: PartnerOverlayProps) {
   const isPicker = picker !== undefined;
+  const inHand = new Set(picker?.myHand ?? []);
   return (
     <div style={overlayBase} data-testid="overlay-partner" data-mode={isPicker ? "picker" : "wait"}>
       <div
@@ -446,6 +449,17 @@ export function PartnerOverlay({ mobile, declarerName, picker }: PartnerOverlayP
             ? "選んだカードを持つ人があなたの味方になります(誰にも明かされません)"
             : `選ばれたカードを持つ人が${declarerName}の味方となります(全員に秘密)`}
         </p>
+        {isPicker && (
+          <p
+            style={{
+              fontSize: mobile ? 10 : 11,
+              color: "var(--text-muted)",
+              margin: "0 0 14px",
+            }}
+          >
+            灰色のカードはあなたの手札なので指名できません
+          </p>
+        )}
 
         <div
           style={{
@@ -461,21 +475,27 @@ export function PartnerOverlay({ mobile, declarerName, picker }: PartnerOverlayP
               {RANKS_DESC.map((r) => {
                 const code = s + r;
                 const isSelected = picker?.selectedCard === code;
+                const owned = inHand.has(code);
+                const clickable = isPicker && !owned;
                 return (
                   <div
                     key={r}
                     data-testid={isPicker ? `adj-card-${code}` : undefined}
+                    data-owned={owned ? "true" : "false"}
                     style={{
-                      cursor: isPicker ? "pointer" : "default",
-                      filter: isPicker
-                        ? isSelected
-                          ? "drop-shadow(0 0 6px rgba(217,83,79,0.6))"
-                          : "none"
-                        : "grayscale(0.5) opacity(0.65)",
+                      cursor: clickable ? "pointer" : "not-allowed",
+                      filter: !isPicker
+                        ? "grayscale(0.5) opacity(0.65)"
+                        : owned
+                          ? "grayscale(1) opacity(0.35)"
+                          : isSelected
+                            ? "drop-shadow(0 0 6px rgba(217,83,79,0.6))"
+                            : "none",
                       transform: isSelected ? "translateY(-4px)" : "none",
                       transition: "transform 120ms",
+                      position: "relative",
                     }}
-                    onClick={isPicker ? () => picker.onSelect(code) : undefined}
+                    onClick={clickable ? () => picker.onSelect(code) : undefined}
                   >
                     <TrumpCard
                       code={code}
