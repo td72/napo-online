@@ -17,9 +17,13 @@ const TS_DIR: &str = "web/src/types/";
 #[ts(export)]
 pub enum ClientMessage {
     // ロビー
-    Hello { display_name: String },
+    Hello {
+        display_name: String,
+    },
     CreateRoom,
-    JoinRoom { room_id: RoomId },
+    JoinRoom {
+        room_id: RoomId,
+    },
     LeaveRoom,
 
     // ホスト操作
@@ -27,11 +31,15 @@ pub enum ClientMessage {
     AbortHand,
     EndMatch,
     /// COM(bot)プレイヤーを追加。ロビー期間中、host のみ。
-    AddCom { display_name: String },
+    AddCom {
+        display_name: String,
+    },
 
     // 全員操作
     NextHand,
-    SubmitAction { action: WireAction },
+    SubmitAction {
+        action: WireAction,
+    },
 
     Ping,
 }

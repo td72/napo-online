@@ -427,11 +427,8 @@ impl Room {
             return;
         }
         if self.phase != LocalPhase::Lobby {
-            self.send_to(
-                &by,
-                error("wrong_phase", "COM can only be added in lobby"),
-            )
-            .await;
+            self.send_to(&by, error("wrong_phase", "COM can only be added in lobby"))
+                .await;
             return;
         }
         if self.members.len() >= self.max_players {
