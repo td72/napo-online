@@ -695,6 +695,14 @@ impl Room {
             return;
         };
         self.next_ready.insert(seat);
+        // COM 席は自動 ready 扱い。1 人 + COM のみ卓でも human だけで進行可能。
+        if let Some(session) = self.session.as_ref() {
+            for (s, pid) in session.seat_to_player().iter().enumerate() {
+                if self.members.get(pid).is_some_and(|m| m.is_com) {
+                    self.next_ready.insert(s);
+                }
+            }
+        }
         let mut ready: Vec<usize> = self.next_ready.iter().copied().collect();
         ready.sort_unstable();
         self.broadcast(ServerMessage::NextHandReady { ready_seats: ready })

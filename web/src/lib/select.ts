@@ -172,6 +172,7 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
     trick,
     trickPhase,
     trickWinnerPos,
+    revealedFaceDiscards: sortHand(observation.revealed_face_discards),
     leadSuit,
     napoName,
     trumpSuit,

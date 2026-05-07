@@ -68,6 +68,8 @@ export interface GamePcViewModel {
   trickPhase: TrickPhase;
   /** gather 中の勝者の場上位置(trick の最終 sink 先)。 */
   trickWinnerPos: FieldSeatPos | null;
+  /** ナポが widow 交換で捨てた絵札(全員に公開)。空なら非表示。 */
+  revealedFaceDiscards: string[];
   /** lead suit。マスト・フォロー判定用。 */
   leadSuit: SuitKey | null;
   /** ナポレオンの名前(top bar 表示用)。 */
@@ -135,12 +137,16 @@ export function GamePC({ vm, selectedIdx, onSelectCard, onPlay }: GamePCProps) {
 
       <TopBar vm={vm} />
 
+      {vm.revealedFaceDiscards.length > 0 && (
+        <DiscardedFacesBanner cards={vm.revealedFaceDiscards} />
+      )}
+
       {/* MAIN STAGE — 4-corner opponents around central table */}
       <div
         style={{
           position: "relative",
           zIndex: 3,
-          height: "calc(100% - 50px - 250px)",
+          height: `calc(100% - 50px - 250px${vm.revealedFaceDiscards.length > 0 ? " - 56px" : ""})`,
           padding: "16px 40px 0",
           boxSizing: "border-box",
         }}
@@ -239,6 +245,41 @@ export function GamePC({ vm, selectedIdx, onSelectCard, onPlay }: GamePCProps) {
       {/* My captured pile — bottom-right near my hand */}
       <div style={{ position: "absolute", right: 22, bottom: 8, zIndex: 4 }}>
         <CapturedPile cards={vm.myCaptured} align="right" />
+      </div>
+    </div>
+  );
+}
+
+function DiscardedFacesBanner({ cards }: { cards: string[] }) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        zIndex: 5,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        padding: "6px 14px",
+        background: "rgba(217,83,79,0.08)",
+        borderBottom: "1px solid var(--border-color)",
+      }}
+      data-testid="banner-discarded-faces"
+    >
+      <span
+        style={{
+          fontSize: 11,
+          letterSpacing: 1,
+          color: "var(--accent-primary)",
+          fontWeight: 600,
+        }}
+      >
+        ナポが捨てた絵札
+      </span>
+      <div style={{ display: "flex", gap: 4 }}>
+        {cards.map((c) => (
+          <TrumpCard key={c} code={c} w={28} h={40} />
+        ))}
       </div>
     </div>
   );
@@ -644,11 +685,10 @@ function Hand({
     >
       {hand.map((code, i) => {
         const offset = i - (n - 1) / 2;
-        // ドーム弧: 中央が最高、両端が baseline。回転方向も鏡像反転して、
-        // 各カードが弧の中心(上方)に向かって放射状になる。
+        // ドーム弧 + 扇形: 中央が最高、両端 baseline。回転は両端が外側に開く向き。
         const maxAbs = (n - 1) / 2;
         const ty = (maxAbs - Math.abs(offset)) * 4;
-        const rot = -offset * 4.5;
+        const rot = offset * 4.5;
         // standard Napoleon: must follow lead suit if held(裏 J ルール込み)。
         const playable =
           !leadSuit ||

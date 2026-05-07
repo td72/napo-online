@@ -86,9 +86,9 @@ export function GameMobile({
           const n = vm.myHand.length;
           const offset = i - (n - 1) / 2;
           const maxAbs = (n - 1) / 2;
-          // ドーム弧: 中央が最高、両端 baseline。
+          // ドーム弧 + 扇形: 中央が最高、両端は baseline で外側に開く回転。
           const ty = (maxAbs - Math.abs(offset)) * 3;
-          const rot = -offset * 5;
+          const rot = offset * 5;
           const trumpSuitOrNull = vm.isNoTrump ? null : vm.trumpSuit;
           const hasLead =
             vm.leadSuit !== null &&

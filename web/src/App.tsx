@@ -885,6 +885,7 @@ function GamePreview() {
     ],
     trickPhase: "playing",
     trickWinnerPos: null,
+    revealedFaceDiscards: [],
     leadSuit: "D",
     napoName: "ミナト",
     trumpSuit: "H",
