@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { TrumpCard } from "./components/Card";
+import { sortHand } from "./components/card-shared";
 import { GameMobile } from "./components/GameMobile";
 import { GamePC, type GamePcViewModel } from "./components/GamePC";
 import {
@@ -547,8 +548,8 @@ function WidowStageOverlay({
   return (
     <WidowOverlay
       mobile={mobile}
-      widow={observation.visible_widow}
-      hand={observation.hand}
+      widow={sortHand(observation.visible_widow)}
+      hand={sortHand(observation.hand)}
       discardCount={observation.visible_widow.length}
       onConfirm={(discard) => submitAction({ type: "exchange_widow", payload: { discard } })}
     />

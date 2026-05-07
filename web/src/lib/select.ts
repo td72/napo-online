@@ -3,7 +3,7 @@
 
 import type { CornerPos, FieldPlayVM, GamePcViewModel, OpponentVM } from "../components/GamePC";
 import type { BidSeatVM, OverlayPhase, StandingVM, TeamPlayerVM } from "../components/Overlays";
-import { effectiveLeadSuit, type SuitKey } from "../components/card-shared";
+import { effectiveLeadSuit, sortHand, type SuitKey } from "../components/card-shared";
 import type {
   PublicEvent,
   RoomView,
@@ -135,7 +135,7 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
 
   return {
     phase: observation.to_act === mySeat ? "turn" : "wait",
-    myHand: observation.hand,
+    myHand: sortHand(observation.hand),
     myCaptured: captured[mySeat] ?? [],
     opponents,
     trick,

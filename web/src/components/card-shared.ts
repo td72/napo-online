@@ -27,6 +27,38 @@ export function parseCard(code: string): ParsedCard {
   return { suit: code[0] as SuitKey, rank: code.slice(1) };
 }
 
+const SUIT_ORDER: Record<SuitKey | "JK", number> = { S: 0, H: 1, D: 2, C: 3, JK: 4 };
+const RANK_ORDER: Record<string, number> = {
+  A: 0,
+  K: 1,
+  Q: 2,
+  J: 3,
+  "10": 4,
+  "9": 5,
+  "8": 6,
+  "7": 7,
+  "6": 8,
+  "5": 9,
+  "4": 10,
+  "3": 11,
+  "2": 12,
+};
+
+/**
+ * 手札表示用ソート。suit ♠♥♦♣ → JK の順、各 suit 内は A,K,Q,J,10..2 の強い順。
+ * ゲームロジックには影響させず、見た目だけ並べる。
+ */
+export function sortHand(cards: readonly string[]): string[] {
+  return [...cards].sort((a, b) => {
+    const pa = parseCard(a);
+    const pb = parseCard(b);
+    const sa = SUIT_ORDER[pa.suit] ?? 99;
+    const sb = SUIT_ORDER[pb.suit] ?? 99;
+    if (sa !== sb) return sa - sb;
+    return (RANK_ORDER[pa.rank] ?? 99) - (RANK_ORDER[pb.rank] ?? 99);
+  });
+}
+
 /** 下半分の pip は 180° 回転して表示する(orthodox playing card 慣例)。 */
 export function isBottomHalf(y: number): boolean {
   return y > 0.5;
