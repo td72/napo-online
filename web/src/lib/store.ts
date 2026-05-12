@@ -35,6 +35,7 @@ interface AppState {
   status: ConnectionStatus;
   myEmail: string | null;
   myHandle: string | null;
+  myAvatar: string;
   serverVersion: string | null;
 
   // ----- Room -----
@@ -143,6 +144,7 @@ export const useStore = create<AppState>((set, get) => ({
   status: "disconnected",
   myEmail: null,
   myHandle: null,
+  myAvatar: "",
   serverVersion: null,
   room: null,
   roomId: null,
@@ -212,11 +214,12 @@ function handleServerMessage(
         myEmail: msg.payload.player_id,
         serverVersion: msg.payload.server_version,
       });
-      // 初期 handle を /api/me から取得
+      // 初期 handle / avatar を /api/me から取得
       void fetch("/api/me")
         .then((r) => (r.ok ? r.json() : null))
-        .then((j: { handle?: string | null } | null) => {
+        .then((j: { handle?: string | null; avatar?: string } | null) => {
           if (j?.handle) set({ myHandle: j.handle });
+          if (j?.avatar !== undefined) set({ myAvatar: j.avatar });
         })
         .catch(() => {});
       // 切断 → 再接続時、サーバが「お前まだこの部屋にいるよ」と返してくる。自動で

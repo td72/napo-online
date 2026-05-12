@@ -48,6 +48,11 @@ DROP TABLE users;
 ALTER TABLE users_new RENAME TO users;
 "#;
 
+/// users.avatar 追加(emoji 1 文字想定。空文字 = 未設定で initial fallback)。
+const SCHEMA_V4_USER_AVATAR: &str = r#"
+ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT '';
+"#;
+
 /// 進行中の Room のスナップショットを格納するテーブル。
 /// snapshot_json には RoomSnapshot を JSON 化したものを入れる。
 const SCHEMA_V3_ROOM_SNAPSHOTS: &str = r#"
@@ -67,6 +72,8 @@ pub struct Db {
 pub struct User {
     pub email: String,
     pub handle: String,
+    /// 表示用 emoji 1 文字。空文字 = 未設定(client は名前 initial にフォールバック)。
+    pub avatar: String,
     pub created_at: i64,
     pub last_seen: i64,
 }
@@ -202,6 +209,12 @@ impl Db {
                     .context("apply schema v3 (room_snapshots)")?;
                 conn.pragma_update(None, "user_version", 3)
                     .context("bump user_version to 3")?;
+            }
+            if current < 4 {
+                conn.execute_batch(SCHEMA_V4_USER_AVATAR)
+                    .context("apply schema v4 (users.avatar)")?;
+                conn.pragma_update(None, "user_version", 4)
+                    .context("bump user_version to 4")?;
             }
             Ok(())
         })
@@ -354,19 +367,60 @@ impl Db {
         tokio::task::spawn_blocking(move || -> Result<Option<User>> {
             let conn = conn.lock().expect("db poisoned");
             conn.query_row(
-                "SELECT email, handle, created_at, last_seen FROM users WHERE email = ?1",
+                "SELECT email, handle, avatar, created_at, last_seen FROM users WHERE email = ?1",
                 params![email],
                 |row| {
                     Ok(User {
                         email: row.get(0)?,
                         handle: row.get(1)?,
-                        created_at: row.get(2)?,
-                        last_seen: row.get(3)?,
+                        avatar: row.get(2)?,
+                        created_at: row.get(3)?,
+                        last_seen: row.get(4)?,
                     })
                 },
             )
             .optional()
             .map_err(Into::into)
+        })
+        .await?
+    }
+
+    /// /api/me の PATCH 用。handle と avatar を直接書き換える(handle 衝突は HandleTaken)。
+    pub async fn set_user_profile(
+        &self,
+        email: &str,
+        handle: &str,
+        avatar: &str,
+    ) -> Result<UpsertResult> {
+        let conn = self.conn.clone();
+        let email = email.to_string();
+        let handle = handle.to_string();
+        let avatar = avatar.to_string();
+        tokio::task::spawn_blocking(move || -> Result<UpsertResult> {
+            let conn = conn.lock().expect("db poisoned");
+            let taken_by: Option<String> = conn
+                .query_row(
+                    "SELECT email FROM users WHERE handle = ?1 COLLATE NOCASE AND email != ?2",
+                    params![handle, email],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if taken_by.is_some() {
+                return Ok(UpsertResult::HandleTaken);
+            }
+            let updated = conn.execute(
+                "UPDATE users SET handle = ?1, avatar = ?2 WHERE email = ?3",
+                params![handle, avatar, email],
+            )?;
+            if updated == 0 {
+                // 未登録 user の API 経由初期化(通常 ws Hello が先だがフェイルセーフ)
+                conn.execute(
+                    "INSERT INTO users (email, handle, avatar, created_at, last_seen)
+                     VALUES (?1, ?2, ?3, strftime('%s','now'), strftime('%s','now'))",
+                    params![email, handle, avatar],
+                )?;
+            }
+            Ok(UpsertResult::Ok)
         })
         .await?
     }
@@ -586,7 +640,7 @@ impl Db {
         tokio::task::spawn_blocking(move || -> Result<Vec<User>> {
             let conn = conn.lock().expect("db poisoned");
             let mut stmt = conn.prepare(
-                "SELECT email, handle, created_at, last_seen FROM users
+                "SELECT email, handle, avatar, created_at, last_seen FROM users
                  ORDER BY last_seen DESC LIMIT ?1 OFFSET ?2",
             )?;
             let rows = stmt
@@ -594,8 +648,9 @@ impl Db {
                     Ok(User {
                         email: row.get(0)?,
                         handle: row.get(1)?,
-                        created_at: row.get(2)?,
-                        last_seen: row.get(3)?,
+                        avatar: row.get(2)?,
+                        created_at: row.get(3)?,
+                        last_seen: row.get(4)?,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;

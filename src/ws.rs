@@ -67,6 +67,7 @@ struct Session {
     state: AppState,
     msg_tx: mpsc::Sender<ServerMessage>,
     display_name: String,
+    avatar: String,
     current_room: Option<RoomHandle>,
     bucket: TokenBucket,
     /// 連続でレート制限に引っかかった回数。閾値超過で切断
@@ -80,13 +81,9 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
 
     // touch last_seen と既存ハンドル取得(再接続でも display_name を保持)
     let _ = state.db.touch_last_seen(&claims.email, now_unix()).await;
-    let existing_handle = state
-        .db
-        .get_user(&claims.email)
-        .await
-        .ok()
-        .flatten()
-        .map(|u| u.handle);
+    let existing_user = state.db.get_user(&claims.email).await.ok().flatten();
+    let existing_handle = existing_user.as_ref().map(|u| u.handle.clone());
+    let existing_avatar = existing_user.as_ref().map(|u| u.avatar.clone()).unwrap_or_default();
 
     let (msg_tx, mut msg_rx) = mpsc::channel::<ServerMessage>(OUTBOUND_BUFFER);
 
@@ -114,6 +111,7 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
         state,
         msg_tx,
         display_name: existing_handle.unwrap_or_else(|| DEFAULT_DISPLAY_NAME.to_string()),
+        avatar: existing_avatar,
         current_room: None,
         bucket: TokenBucket::new(rate, rate.saturating_mul(2).max(1)),
         consecutive_throttles: 0,
@@ -365,6 +363,7 @@ async fn join_room_inner(socket: &mut WebSocket, session: &mut Session, room_id:
     let info = PlayerInfo {
         player_id: session.claims.email.clone(),
         display_name: session.display_name.clone(),
+        avatar: session.avatar.clone(),
     };
     let owned_id = room_id.to_string();
     match session

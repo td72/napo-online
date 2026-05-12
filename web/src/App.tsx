@@ -50,8 +50,10 @@ function Header({
   const status = useStore((s) => s.status);
   const myEmail = useStore((s) => s.myEmail);
   const myHandle = useStore((s) => s.myHandle);
+  const myAvatar = useStore((s) => s.myAvatar);
   const serverVersion = useStore((s) => s.serverVersion);
   const disconnect = useStore((s) => s.disconnect);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <header
@@ -76,7 +78,18 @@ function Header({
       <span style={badgeStyle(status)}>{status}</span>
       {myEmail && <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>{myEmail}</span>}
       {myHandle && (
-        <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>名前: {myHandle}</span>
+        <span
+          style={{
+            color: "var(--text-secondary)",
+            fontSize: 12,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          {myAvatar && <span style={{ fontSize: 16 }}>{myAvatar}</span>}
+          {myHandle}
+        </span>
       )}
       {serverVersion && (
         <span style={{ color: "var(--text-muted)", fontSize: 11 }}>server v{serverVersion}</span>
@@ -102,11 +115,195 @@ function Header({
         ))}
       </div>
       {status !== "disconnected" && (
-        <button type="button" onClick={disconnect} style={btnStyle}>
-          切断
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            style={btnStyle}
+            data-testid="btn-settings"
+          >
+            設定
+          </button>
+          <button type="button" onClick={disconnect} style={btnStyle}>
+            切断
+          </button>
+        </>
       )}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </header>
+  );
+}
+
+const AVATAR_PRESETS = [
+  "",
+  "🦊",
+  "🐱",
+  "🐶",
+  "🐰",
+  "🐻",
+  "🐼",
+  "🐨",
+  "🐯",
+  "🦁",
+  "🐮",
+  "🐸",
+  "🐵",
+  "🐔",
+  "🐧",
+  "🐦",
+  "🐢",
+  "🐙",
+  "🦄",
+  "🐲",
+  "😀",
+  "😎",
+  "🤓",
+  "🥳",
+  "🤖",
+  "👽",
+  "👻",
+  "🎩",
+  "👑",
+  "🎭",
+] as const;
+
+function SettingsModal({ onClose }: { onClose: () => void }) {
+  const myHandle = useStore((s) => s.myHandle);
+  const myAvatar = useStore((s) => s.myAvatar);
+  const setHandle = useStore((s) => s.setHandle);
+  const [name, setName] = useState(myHandle ?? "");
+  const [avatar, setAvatar] = useState(myAvatar);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onSave = async () => {
+    if (!name.trim()) {
+      setError("名前を入力してください");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle: name.trim(), avatar }),
+      });
+      const j = (await r.json()) as { ok: boolean; error?: string };
+      if (!j.ok) {
+        setError(
+          j.error === "handle_taken"
+            ? "その名前はすでに使われています"
+            : j.error === "handle_too_long"
+              ? "名前が長すぎます(32 文字以内)"
+              : (j.error ?? "保存失敗"),
+        );
+        return;
+      }
+      setHandle(name.trim());
+      useStore.setState({ myAvatar: avatar });
+      localStorage.setItem("napo:displayName", name.trim());
+      onClose();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 100,
+        background: "rgba(43,38,32,0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "var(--bg-primary)",
+          borderRadius: "var(--radius-lg)",
+          padding: 24,
+          maxWidth: 420,
+          width: "92%",
+          boxShadow: "var(--shadow-lg)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+        data-testid="modal-settings"
+      >
+        <h2 style={{ ...h2Style, marginTop: 0 }}>アカウント設定</h2>
+        <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>名前</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="名前"
+          style={{ ...inputStyle, width: "100%", marginTop: 4, marginBottom: 14 }}
+          data-testid="input-settings-name"
+          maxLength={32}
+        />
+        <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>アバター</label>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(8, 1fr)",
+            gap: 6,
+            marginTop: 6,
+            marginBottom: 14,
+          }}
+        >
+          {AVATAR_PRESETS.map((emoji) => {
+            const selected = emoji === avatar;
+            return (
+              <button
+                type="button"
+                key={emoji || "none"}
+                onClick={() => setAvatar(emoji)}
+                style={{
+                  fontSize: 22,
+                  height: 36,
+                  border: selected
+                    ? "2px solid var(--accent-primary)"
+                    : "1px solid var(--border-color)",
+                  borderRadius: "var(--radius-sm)",
+                  background: selected ? "rgba(217,83,79,0.08)" : "var(--bg-secondary)",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                {emoji || "—"}
+              </button>
+            );
+          })}
+        </div>
+        {error && (
+          <p style={{ color: "var(--accent-primary)", fontSize: 12, margin: "0 0 12px" }}>
+            {error}
+          </p>
+        )}
+        <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 14px" }}>
+          ※ 進行中のルームでは次回の入室から反映されます。
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" onClick={onClose} style={btnStyle} disabled={saving}>
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={() => void onSave()}
+            style={btnStyle}
+            disabled={saving}
+            data-testid="btn-settings-save"
+          >
+            {saving ? "保存中…" : "保存"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

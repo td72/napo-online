@@ -8,6 +8,8 @@ import { type PlayerStatus, type Team, STATUS_TEXT, colorForName } from "./playe
 
 export interface AvatarProps {
   name: string;
+  /** emoji 1 文字。空なら名前 initial をフォールバック表示。 */
+  avatar?: string;
   size?: number;
   team?: Team;
   active?: boolean;
@@ -18,14 +20,16 @@ export interface AvatarProps {
 
 export function Avatar({
   name,
+  avatar,
   size = 40,
   team = null,
   active = false,
   ringColor,
   disconnected = false,
 }: AvatarProps) {
+  const hasAvatar = !!avatar && avatar.length > 0;
   const initial = name[0] ?? "?";
-  const bg = colorForName(name);
+  const bg = hasAvatar ? "var(--bg-secondary)" : colorForName(name);
   const ring = active
     ? "var(--accent-primary)"
     : team === "napo"
@@ -40,13 +44,14 @@ export function Avatar({
         height: size,
         borderRadius: "50%",
         background: bg,
-        color: "#fff",
+        color: hasAvatar ? "var(--text-primary)" : "#fff",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         fontFamily: "var(--font-sans)",
         fontWeight: 600,
-        fontSize: size * 0.42,
+        fontSize: hasAvatar ? size * 0.6 : size * 0.42,
+        lineHeight: 1,
         boxShadow:
           ring !== "transparent"
             ? `0 0 0 2.5px var(--bg-primary), 0 0 0 4.5px ${ring}, 0 1px 3px rgba(0,0,0,0.18)`
@@ -59,7 +64,7 @@ export function Avatar({
         transition: "opacity 200ms, filter 200ms",
       }}
     >
-      {initial}
+      {hasAvatar ? avatar : initial}
     </div>
   );
 }
@@ -96,6 +101,8 @@ export function DisconnectedBadge({ sinceMs }: { sinceMs: number }) {
 
 export interface PlayerBadgeProps {
   name: string;
+  /** emoji 1 文字。Avatar が initial フォールバックする。 */
+  avatar?: string;
   /** 状態テキスト。空文字で非表示。 */
   status?: PlayerStatus;
   /** 'napo' = ナポ陣営、'army' = 連合軍。avatar の枠色と王冠マークに反映。 */
@@ -123,6 +130,7 @@ export interface PlayerBadgeProps {
 export function PlayerBadge(props: PlayerBadgeProps) {
   const {
     name,
+    avatar,
     status = "",
     team = null,
     active = false,
@@ -159,7 +167,13 @@ export function PlayerBadge(props: PlayerBadgeProps) {
         }}
       >
         <div style={{ position: "relative" }}>
-          <Avatar name={name} size={36} active={active} disconnected={disconnected} />
+          <Avatar
+            name={name}
+            avatar={avatar}
+            size={36}
+            active={active}
+            disconnected={disconnected}
+          />
           {isNapo && <NapoleonCrown />}
           {team === "napo" && !isNapo && <NapoChip />}
           {isPartner && <PartnerChip />}
@@ -241,7 +255,14 @@ export function PlayerBadge(props: PlayerBadgeProps) {
         }}
       >
         <div style={{ position: "relative" }}>
-          <Avatar name={name} size={36} team={team} active={active} disconnected={disconnected} />
+          <Avatar
+            name={name}
+            avatar={avatar}
+            size={36}
+            team={team}
+            active={active}
+            disconnected={disconnected}
+          />
           {team === "napo" && <NapoChip />}
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -291,7 +312,7 @@ export function PlayerBadge(props: PlayerBadgeProps) {
       }}
     >
       <div style={{ position: "relative" }}>
-        <Avatar name={name} size={48} team={team} active={active} />
+        <Avatar name={name} avatar={avatar} size={48} team={team} active={active} />
         {team === "napo" && <NapoChip large />}
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>

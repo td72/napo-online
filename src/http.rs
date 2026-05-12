@@ -16,6 +16,8 @@ pub struct MeResponse {
     pub email: String,
     /// 登録済み display_name。未登録なら None。
     pub handle: Option<String>,
+    /// emoji 1 文字。未設定なら "" (空文字)。
+    pub avatar: String,
     pub sub: String,
 }
 
@@ -26,8 +28,63 @@ pub async fn me(
     let user = state.db.get_user(&claims.email).await?;
     Ok(Json(MeResponse {
         email: claims.email.clone(),
-        handle: user.map(|u| u.handle),
+        handle: user.as_ref().map(|u| u.handle.clone()),
+        avatar: user.map(|u| u.avatar).unwrap_or_default(),
         sub: claims.sub,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateMeRequest {
+    pub handle: String,
+    pub avatar: String,
+}
+
+#[derive(Serialize)]
+pub struct UpdateMeResponse {
+    pub ok: bool,
+    /// HandleTaken の場合は "handle_taken"、それ以外は None。
+    pub error: Option<String>,
+}
+
+pub async fn update_me(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<UpdateMeRequest>,
+) -> Result<Json<UpdateMeResponse>, AppError> {
+    let handle = req.handle.trim();
+    if handle.is_empty() {
+        return Ok(Json(UpdateMeResponse {
+            ok: false,
+            error: Some("empty_handle".into()),
+        }));
+    }
+    if handle.chars().count() > 32 {
+        return Ok(Json(UpdateMeResponse {
+            ok: false,
+            error: Some("handle_too_long".into()),
+        }));
+    }
+    let avatar = req.avatar.trim();
+    if avatar.chars().count() > 4 {
+        return Ok(Json(UpdateMeResponse {
+            ok: false,
+            error: Some("avatar_too_long".into()),
+        }));
+    }
+    let res = state
+        .db
+        .set_user_profile(&claims.email, handle, avatar)
+        .await?;
+    Ok(Json(match res {
+        crate::db::UpsertResult::Ok => UpdateMeResponse {
+            ok: true,
+            error: None,
+        },
+        crate::db::UpsertResult::HandleTaken => UpdateMeResponse {
+            ok: false,
+            error: Some("handle_taken".into()),
+        },
     }))
 }
 

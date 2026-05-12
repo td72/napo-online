@@ -125,6 +125,15 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
   const seatToName = new Map<number, string>();
   for (const s of seats) seatToName.set(s.seat, s.display_name);
   const nameOf = (seat: number) => seatToName.get(seat) ?? `seat${seat}`;
+  // seat → avatar(room.players の player_id ↔ seats の player_id で結ぶ)。
+  const seatToAvatar = new Map<number, string>();
+  if (input.room) {
+    const pidToAvatar = new Map(input.room.players.map((p) => [p.player_id, p.avatar]));
+    for (const s of seats) {
+      const av = pidToAvatar.get(s.player_id);
+      if (av) seatToAvatar.set(s.seat, av);
+    }
+  }
 
   const captured = capturedBySeat(observation, observation.num_players);
   const adjSeat = observation.adjutant_player ?? null;
@@ -138,6 +147,7 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
     const since = disconnectedSeats?.get(seat);
     opponents.push({
       name: nameOf(seat),
+      avatar: seatToAvatar.get(seat),
       pos,
       depth: isBack ? "back" : "front",
       status: observation.to_act === seat ? "thinking" : "waiting",

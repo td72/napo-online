@@ -38,6 +38,8 @@ pub struct MemberSnapshot {
     pub player_id: PlayerId,
     pub display_name: String,
     #[serde(default)]
+    pub avatar: String,
+    #[serde(default)]
     pub is_com: bool,
 }
 
@@ -60,6 +62,7 @@ pub struct SessionSnapshot {
 pub struct PlayerInfo {
     pub player_id: PlayerId,
     pub display_name: String,
+    pub avatar: String,
 }
 
 /// Room actor のタイマー設定。env から組み立てて Hub 経由で各 Room に渡す。
@@ -198,6 +201,7 @@ impl Room {
                     info: PlayerInfo {
                         player_id: m.player_id,
                         display_name: m.display_name,
+                        avatar: m.avatar,
                     },
                     sender: None,
                     conn: ConnState::Suspended,
@@ -247,6 +251,7 @@ impl Room {
                 .map(|m| MemberSnapshot {
                     player_id: m.info.player_id.clone(),
                     display_name: m.info.display_name.clone(),
+                    avatar: m.info.avatar.clone(),
                     is_com: m.is_com,
                 })
                 .collect(),
@@ -456,6 +461,7 @@ impl Room {
                 info: PlayerInfo {
                     player_id: pid.clone(),
                     display_name: name,
+                    avatar: "🤖".to_string(),
                 },
                 sender: None,
                 conn: ConnState::Online,
@@ -945,6 +951,7 @@ impl Room {
             .map(|m| PlayerView {
                 player_id: m.info.player_id.clone(),
                 display_name: m.info.display_name.clone(),
+                avatar: m.info.avatar.clone(),
                 seat: self
                     .session
                     .as_ref()

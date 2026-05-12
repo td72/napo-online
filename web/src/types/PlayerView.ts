@@ -3,6 +3,10 @@
 export type PlayerView = {
   player_id: string;
   display_name: string;
+  /**
+   * 表示用 emoji 1 文字。空文字 = 未設定で client は名前 initial にフォールバック。
+   */
+  avatar: string;
   seat: number | null;
   online: boolean;
   /**

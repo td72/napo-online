@@ -40,7 +40,7 @@ pub fn now_unix() -> i64 {
 /// `axum::serve(listener, build_router(state))` で起動できる。
 pub fn build_router(state: AppState) -> Router {
     let protected = Router::new()
-        .route("/api/me", get(http::me))
+        .route("/api/me", get(http::me).patch(http::update_me))
         .route("/api/users", get(http::list_users))
         .route("/api/rooms", get(http::list_rooms))
         .route("/api/games", get(http::list_games))

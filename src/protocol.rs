@@ -245,6 +245,9 @@ pub struct RoomView {
 pub struct PlayerView {
     pub player_id: PlayerId,
     pub display_name: String,
+    /// 表示用 emoji 1 文字。空文字 = 未設定で client は名前 initial にフォールバック。
+    #[serde(default)]
+    pub avatar: String,
     pub seat: Option<usize>,
     pub online: bool,
     /// COM(bot)プレイヤーかどうか。WS は持たず、サーバ側 driver が手を打つ。
@@ -323,6 +326,7 @@ mod tests {
                 players: vec![PlayerView {
                     player_id: "alice@example.com".into(),
                     display_name: "alice".into(),
+                    avatar: String::new(),
                     seat: None,
                     online: true,
                     is_com: false,

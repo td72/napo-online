@@ -368,7 +368,7 @@ function PlayersRow({ vm }: { vm: GamePcViewModel }) {
           }}
         >
           <div style={{ position: "relative" }}>
-            <Avatar name={o.name} size={32} disconnected={o.disconnected} />
+            <Avatar name={o.name} avatar={o.avatar} size={32} disconnected={o.disconnected} />
             {o.isNapo && <SmallCrown />}
             {o.isPartner && <SmallPartnerChip />}
           </div>

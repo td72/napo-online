@@ -15,6 +15,8 @@ export type FieldSeatPos = CornerPos | "self";
 
 export interface OpponentVM {
   name: string;
+  /** emoji 1 文字。空なら initial フォールバック。 */
+  avatar?: string;
   pos: CornerPos;
   /** back row(tl/tr)= "back" → 視覚的に縮小、front row(bl/br)= "front" */
   depth: "back" | "front";
@@ -400,6 +402,7 @@ function Sep() {
 
 function CornerOpponent({
   name,
+  avatar,
   pos,
   status,
   cards,
@@ -479,6 +482,7 @@ function CornerOpponent({
       </div>
       <PlayerBadge
         name={name}
+        avatar={avatar}
         status={status}
         total={total}
         isNapo={isNapo}
