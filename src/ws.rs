@@ -83,7 +83,10 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
     let _ = state.db.touch_last_seen(&claims.email, now_unix()).await;
     let existing_user = state.db.get_user(&claims.email).await.ok().flatten();
     let existing_handle = existing_user.as_ref().map(|u| u.handle.clone());
-    let existing_avatar = existing_user.as_ref().map(|u| u.avatar.clone()).unwrap_or_default();
+    let existing_avatar = existing_user
+        .as_ref()
+        .map(|u| u.avatar.clone())
+        .unwrap_or_default();
 
     let (msg_tx, mut msg_rx) = mpsc::channel::<ServerMessage>(OUTBOUND_BUFFER);
 
