@@ -92,7 +92,9 @@ run = "vp test"
 
 [tasks."web:types"]
 description = "src/protocol.rs から TS 型を web/src/types/ に再生成"
-run = "cargo test --lib export_bindings --quiet"
+# touch で再 compile を強制(ts-rs export は test 内で実行されるため
+# test がキャッシュされていると再出力されないことがある)。
+run = "touch src/protocol.rs && cargo test --lib export_bindings --quiet"
 
 [tasks."web:e2e"]
 description = "Playwright で 5 player E2E。webServer 機能で Rust server を自動起動"

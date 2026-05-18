@@ -12,4 +12,5 @@ export type ClientMessage =
   | { type: "add_com"; payload: { display_name: string } }
   | { type: "next_hand" }
   | { type: "submit_action"; payload: { action: WireAction } }
+  | { type: "chat"; payload: { text: string } }
   | { type: "ping" };

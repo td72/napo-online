@@ -53,6 +53,22 @@ const SCHEMA_V4_USER_AVATAR: &str = r#"
 ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT '';
 "#;
 
+/// chat 永続化テーブル。snapshot ではなく専用テーブルで全件保存(古いものを消さない)。
+/// seq は room 単位での連番。
+const SCHEMA_V5_CHAT_MESSAGES: &str = r#"
+CREATE TABLE IF NOT EXISTS chat_messages (
+    room_id       TEXT NOT NULL,
+    seq           INTEGER NOT NULL,
+    sender_id     TEXT NOT NULL,
+    sender_name   TEXT NOT NULL,
+    sender_avatar TEXT NOT NULL DEFAULT '',
+    text          TEXT NOT NULL,
+    ts_ms         INTEGER NOT NULL,
+    PRIMARY KEY (room_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_room_seq ON chat_messages (room_id, seq DESC);
+"#;
+
 /// 進行中の Room のスナップショットを格納するテーブル。
 /// snapshot_json には RoomSnapshot を JSON 化したものを入れる。
 const SCHEMA_V3_ROOM_SNAPSHOTS: &str = r#"
@@ -227,6 +243,12 @@ impl Db {
                 conn.pragma_update(None, "user_version", 4)
                     .context("bump user_version to 4")?;
             }
+            if current < 5 {
+                conn.execute_batch(SCHEMA_V5_CHAT_MESSAGES)
+                    .context("apply schema v5 (chat_messages)")?;
+                conn.pragma_update(None, "user_version", 5)
+                    .context("bump user_version to 5")?;
+            }
             Ok(())
         })
         .await?
@@ -355,6 +377,99 @@ impl Db {
                 })
                 .collect();
             Ok(summaries)
+        })
+        .await?
+    }
+
+    /// chat 1 件を append。返り値は付与された seq。
+    pub async fn insert_chat(
+        &self,
+        room_id: &str,
+        sender_id: &str,
+        sender_name: &str,
+        sender_avatar: &str,
+        text: &str,
+        ts_ms: i64,
+    ) -> Result<i64> {
+        let conn = self.conn.clone();
+        let room_id = room_id.to_string();
+        let sender_id = sender_id.to_string();
+        let sender_name = sender_name.to_string();
+        let sender_avatar = sender_avatar.to_string();
+        let text = text.to_string();
+        tokio::task::spawn_blocking(move || -> Result<i64> {
+            let conn = conn.lock().expect("db poisoned");
+            let next_seq: i64 = conn
+                .query_row(
+                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM chat_messages WHERE room_id = ?1",
+                    params![room_id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(1);
+            conn.execute(
+                "INSERT INTO chat_messages (room_id, seq, sender_id, sender_name, sender_avatar, text, ts_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![room_id, next_seq, sender_id, sender_name, sender_avatar, text, ts_ms],
+            )?;
+            Ok(next_seq)
+        })
+        .await?
+    }
+
+    /// 古いものから limit 件取得(seq 昇順)。before_seq を指定すると seq < before_seq に絞る
+    /// (scrollback: 「これより古い分」を取り出す用途)。
+    pub async fn list_chat(
+        &self,
+        room_id: &str,
+        before_seq: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<crate::protocol::ChatEntry>> {
+        let conn = self.conn.clone();
+        let room_id = room_id.to_string();
+        tokio::task::spawn_blocking(move || -> Result<Vec<crate::protocol::ChatEntry>> {
+            let conn = conn.lock().expect("db poisoned");
+            // 最新側から limit 件取って、表示用に昇順に並び替える。
+            let rows: Vec<crate::protocol::ChatEntry> = match before_seq {
+                Some(before) => {
+                    let mut stmt = conn.prepare(
+                        "SELECT seq, sender_id, sender_name, sender_avatar, text, ts_ms FROM chat_messages
+                         WHERE room_id = ?1 AND seq < ?2
+                         ORDER BY seq DESC LIMIT ?3",
+                    )?;
+                    stmt.query_map(params![room_id, before, limit as i64], |r| {
+                        Ok(crate::protocol::ChatEntry {
+                            seq: r.get(0)?,
+                            sender_id: r.get(1)?,
+                            sender_name: r.get(2)?,
+                            sender_avatar: r.get(3)?,
+                            text: r.get(4)?,
+                            ts_ms: r.get(5)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?
+                }
+                None => {
+                    let mut stmt = conn.prepare(
+                        "SELECT seq, sender_id, sender_name, sender_avatar, text, ts_ms FROM chat_messages
+                         WHERE room_id = ?1
+                         ORDER BY seq DESC LIMIT ?2",
+                    )?;
+                    stmt.query_map(params![room_id, limit as i64], |r| {
+                        Ok(crate::protocol::ChatEntry {
+                            seq: r.get(0)?,
+                            sender_id: r.get(1)?,
+                            sender_name: r.get(2)?,
+                            sender_avatar: r.get(3)?,
+                            text: r.get(4)?,
+                            ts_ms: r.get(5)?,
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?
+                }
+            };
+            let mut asc = rows;
+            asc.reverse(); // → 古い→新しい
+            Ok(asc)
         })
         .await?
     }

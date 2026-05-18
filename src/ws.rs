@@ -316,6 +316,17 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
             )
             .await
         }
+        ClientMessage::Chat { text } => {
+            forward_to_room(
+                socket,
+                session,
+                RoomCommand::Chat {
+                    player: session.claims.email.clone(),
+                    text,
+                },
+            )
+            .await
+        }
     }
 }
 

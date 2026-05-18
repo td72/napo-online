@@ -324,6 +324,34 @@ pub async fn list_rooms(
     Ok(Json(RoomListResponse { rooms }))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ChatHistoryParams {
+    /// この seq より前(古い方)を取得。省略時は最新側。
+    pub before_seq: Option<i64>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+pub struct ChatHistoryResponse {
+    pub entries: Vec<crate::protocol::ChatEntry>,
+}
+
+/// 指定 room の chat 履歴を取得。scrollback 用。
+/// before_seq 指定で「これより古い分」を取得できる。
+pub async fn get_chat_history(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+    axum::extract::Path(room_id): axum::extract::Path<String>,
+    Query(params): Query<ChatHistoryParams>,
+) -> Result<Json<ChatHistoryResponse>, AppError> {
+    let limit = params.limit.unwrap_or(100).clamp(1, 500);
+    let entries = state
+        .db
+        .list_chat(&room_id, params.before_seq, limit)
+        .await?;
+    Ok(Json(ChatHistoryResponse { entries }))
+}
+
 /// 終局済みの局を新しい順に返す。`?limit=N&offset=M`(デフォルト 20、最大 100)。
 pub async fn list_games(
     State(state): State<AppState>,

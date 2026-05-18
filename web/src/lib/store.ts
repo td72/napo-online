@@ -4,6 +4,7 @@
 import { create } from "zustand";
 import { buildWsUrl, openWebSocket } from "./ws";
 import type {
+  ChatEntry,
   ClientMessage,
   PlayerView,
   PublicEvent,
@@ -18,6 +19,9 @@ export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "re
 
 const PING_INTERVAL_MS = 30_000;
 const MAX_EVENT_LOG = 200;
+// chat は client 側で上限を設けない(server 側で全件保存しているため、
+// scrollback もできる)。古いセッションで膨らみすぎたら reload で backlog(最新 100)
+// に戻る。
 
 interface ErrorEntry {
   code: string;
@@ -60,6 +64,7 @@ interface AppState {
   // ----- Log -----
   events: PublicEvent[];
   errors: ErrorEntry[];
+  chatLog: ChatEntry[];
 
   // ----- Actions -----
   connect: (displayName: string, devEmail?: string) => void;
@@ -159,6 +164,7 @@ export const useStore = create<AppState>((set, get) => ({
   finalScores: null,
   events: [],
   errors: [],
+  chatLog: [],
 
   connect: (displayName, devEmail) => {
     // ユーザー操作の connect。自動再接続ステートをリセット。
@@ -289,6 +295,19 @@ function handleServerMessage(
       set((s) => ({
         events: [...s.events, msg.payload.event].slice(-MAX_EVENT_LOG),
       }));
+      break;
+
+    case "chat":
+      // 単発の新着。append。重複(再接続時に backlog と被るケース)は seq で除去。
+      set((s) => {
+        if (s.chatLog.some((e) => e.seq === msg.payload.entry.seq)) return {};
+        return { chatLog: [...s.chatLog, msg.payload.entry] };
+      });
+      break;
+
+    case "chat_backlog":
+      // backlog は room 入室時に 1 度送られてくる。既存の chatLog をクリアして置換。
+      set({ chatLog: msg.payload.entries });
       break;
 
     case "hand_ended":

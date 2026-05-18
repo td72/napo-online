@@ -40,6 +40,9 @@ pub enum ClientMessage {
     SubmitAction {
         action: WireAction,
     },
+    Chat {
+        text: String,
+    },
 
     Ping,
 }
@@ -130,6 +133,29 @@ pub enum ServerMessage {
     PlayerReconnected {
         seat: usize,
     },
+
+    // チャット
+    Chat {
+        entry: ChatEntry,
+    },
+    /// 入室時に既存のチャット履歴を新規参加者にだけ送る。
+    ChatBacklog {
+        entries: Vec<ChatEntry>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
+pub struct ChatEntry {
+    /// room 内連番(1-based)。client は scrollback の起点として使う。
+    pub seq: i64,
+    pub sender_id: PlayerId,
+    pub sender_name: String,
+    /// emoji 1 文字。空なら未設定。
+    #[serde(default)]
+    pub sender_avatar: String,
+    pub text: String,
+    pub ts_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]

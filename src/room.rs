@@ -17,6 +17,7 @@ use crate::protocol::{
 };
 
 /// 永続化用のスナップショット。`napo_core::Match` を直接埋め込む(serde feature 必須)。
+/// chat は別テーブル(chat_messages)で管理するため snapshot には含めない。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomSnapshot {
     pub schema: u32,
@@ -105,6 +106,10 @@ pub enum RoomCommand {
         by: PlayerId,
         display_name: String,
     },
+    Chat {
+        player: PlayerId,
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,6 +153,17 @@ pub struct Room {
     db: Db,
     timers: RoomTimers,
     current_hand_started_at: Option<i64>,
+}
+
+const CHAT_TEXT_MAX_CHARS: usize = 500;
+/// 入室時に backlog として送る最新メッセージ数。これより古いものは scrollback で取得。
+const CHAT_BACKLOG_INITIAL: usize = 100;
+
+fn chrono_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 impl Room {
@@ -359,7 +375,51 @@ impl Room {
             RoomCommand::AbortHand { by } => self.on_abort_hand(by).await,
             RoomCommand::EndMatch { by } => self.on_end_match(by).await,
             RoomCommand::AddCom { by, display_name } => self.on_add_com(by, display_name).await,
+            RoomCommand::Chat { player, text } => self.on_chat(player, text).await,
         }
+    }
+
+    async fn on_chat(&mut self, player: PlayerId, text: String) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let truncated: String = trimmed.chars().take(CHAT_TEXT_MAX_CHARS).collect();
+        let Some(m) = self.members.get(&player) else {
+            return;
+        };
+        let sender_id = m.info.player_id.clone();
+        let sender_name = m.info.display_name.clone();
+        let sender_avatar = m.info.avatar.clone();
+        let ts_ms = chrono_millis();
+        let seq = match self
+            .db
+            .insert_chat(
+                &self.id,
+                &sender_id,
+                &sender_name,
+                &sender_avatar,
+                &truncated,
+                ts_ms,
+            )
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(room = %self.id, error = %e, "insert_chat failed");
+                // 永続化失敗時は配信もスキップ(client 間で seq の整合が崩れるため)。
+                return;
+            }
+        };
+        let entry = crate::protocol::ChatEntry {
+            seq,
+            sender_id,
+            sender_name,
+            sender_avatar,
+            text: truncated,
+            ts_ms,
+        };
+        self.broadcast(ServerMessage::Chat { entry }).await;
     }
 
     async fn on_join(&mut self, info: PlayerInfo, reply: mpsc::Sender<ServerMessage>) {
@@ -390,6 +450,8 @@ impl Room {
                         .await;
                 }
             }
+            // chat 履歴を再送
+            self.send_chat_backlog(&reply).await;
             self.broadcast_room_state().await;
             self.persist().await;
             return;
@@ -409,6 +471,7 @@ impl Room {
             return;
         }
         let pid = info.player_id.clone();
+        let reply_clone = reply.clone();
         self.members.insert(
             pid.clone(),
             RoomMember {
@@ -421,8 +484,27 @@ impl Room {
             },
         );
         tracing::info!(room = %self.id, player = %pid, "player joined");
+        self.send_chat_backlog(&reply_clone).await;
         self.broadcast_room_state().await;
         self.persist().await;
+    }
+
+    /// 指定 sender へ最新 N 件の chat 履歴を ChatBacklog で送る。
+    /// それより古いものは client が scrollback で別途取得する。
+    async fn send_chat_backlog(&self, reply: &mpsc::Sender<ServerMessage>) {
+        match self
+            .db
+            .list_chat(&self.id, None, CHAT_BACKLOG_INITIAL)
+            .await
+        {
+            Ok(entries) if !entries.is_empty() => {
+                let _ = reply.send(ServerMessage::ChatBacklog { entries }).await;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(room = %self.id, error = %e, "list_chat failed");
+            }
+        }
     }
 
     async fn on_add_com(&mut self, by: PlayerId, display_name: String) {

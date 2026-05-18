@@ -25,7 +25,7 @@ import {
   selectOverlayPhase,
 } from "./lib/select";
 import { useStore } from "./lib/store";
-import type { WirePlayedCard, WireTrump } from "./types";
+import type { ChatEntry, WirePlayedCard, WireTrump } from "./types";
 
 function App() {
   const observation = useStore((s) => s.observation);
@@ -470,6 +470,7 @@ function LobbyView() {
               退出
             </button>
           </div>
+          <ChatPanel />
         </section>
       )}
 
@@ -498,6 +499,175 @@ function LobbyView() {
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+function ChatPanel() {
+  const chatLog = useStore((s) => s.chatLog);
+  const send = useStore((s) => s.send);
+  const myEmail = useStore((s) => s.myEmail);
+  const roomId = useStore((s) => s.roomId);
+  const [draft, setDraft] = useState("");
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 末尾追加(新着)時のみ自動スクロール。scrollback の先頭挿入では維持。
+  const prevLastSeqRef = useRef<bigint | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const lastSeq = chatLog[chatLog.length - 1]?.seq ?? null;
+    const prev = prevLastSeqRef.current;
+    // 末尾 seq が増えていれば新着 → 底スクロール。
+    if (lastSeq !== null && (prev === null || lastSeq > prev)) {
+      el.scrollTop = el.scrollHeight;
+    }
+    prevLastSeqRef.current = lastSeq;
+  }, [chatLog]);
+
+  const onSend = () => {
+    const t = draft.trim();
+    if (!t) return;
+    send({ type: "chat", payload: { text: t } });
+    setDraft("");
+  };
+
+  const loadOlder = async () => {
+    if (loadingOlder || !hasMore || !roomId) return;
+    const oldestSeq = chatLog[0]?.seq;
+    if (oldestSeq === undefined || oldestSeq <= 1) {
+      setHasMore(false);
+      return;
+    }
+    setLoadingOlder(true);
+    try {
+      const r = await fetch(
+        `/api/rooms/${encodeURIComponent(roomId)}/chat?before_seq=${oldestSeq}&limit=100`,
+      );
+      if (!r.ok) return;
+      const j = (await r.json()) as { entries: ChatEntry[] };
+      if (j.entries.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      // 先頭側にマージ(seq 順を維持)
+      useStore.setState((s) => {
+        const known = new Set(s.chatLog.map((e) => e.seq));
+        const fresh = j.entries.filter((e) => !known.has(e.seq));
+        return { chatLog: [...fresh, ...s.chatLog] };
+      });
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: "1px solid var(--border-color)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--bg-primary)",
+      }}
+      data-testid="chat-panel"
+    >
+      <div
+        style={{
+          padding: "6px 10px",
+          fontSize: 11,
+          letterSpacing: 1,
+          color: "var(--text-muted)",
+          borderBottom: "1px solid var(--border-color)",
+        }}
+      >
+        CHAT
+      </div>
+      <div
+        ref={scrollRef}
+        style={{
+          maxHeight: 200,
+          minHeight: 80,
+          overflowY: "auto",
+          padding: "6px 10px",
+          fontSize: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+        }}
+      >
+        {hasMore && chatLog.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void loadOlder()}
+            disabled={loadingOlder}
+            data-testid="chat-load-older"
+            style={{
+              alignSelf: "center",
+              fontSize: 11,
+              padding: "2px 10px",
+              background: "transparent",
+              border: "1px solid var(--border-color)",
+              borderRadius: 99,
+              color: "var(--text-secondary)",
+              cursor: loadingOlder ? "wait" : "pointer",
+              marginBottom: 4,
+            }}
+          >
+            {loadingOlder ? "読込中…" : "もっと前のメッセージを見る"}
+          </button>
+        )}
+        {chatLog.length === 0 && (
+          <div style={{ color: "var(--text-muted)", fontStyle: "italic" }}>まだメッセージなし</div>
+        )}
+        {chatLog.map((e) => {
+          const mine = e.sender_id === myEmail;
+          return (
+            <div
+              key={e.seq}
+              data-testid="chat-entry"
+              style={{
+                display: "flex",
+                gap: 6,
+                alignItems: "baseline",
+                color: mine ? "var(--text-primary)" : "var(--text-secondary)",
+              }}
+            >
+              <span style={{ fontSize: 14 }}>{e.sender_avatar || "・"}</span>
+              <span style={{ fontWeight: 600, fontSize: 11 }}>{e.sender_name}</span>
+              <span style={{ flex: 1, wordBreak: "break-word" }}>{e.text}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div
+        style={{ display: "flex", gap: 6, padding: 8, borderTop: "1px solid var(--border-color)" }}
+      >
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
+          placeholder="メッセージ(Enter で送信)"
+          style={{ ...inputStyle, flex: 1, fontSize: 12 }}
+          maxLength={500}
+          data-testid="chat-input"
+        />
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={!draft.trim()}
+          style={{ ...btnStyle, padding: "4px 12px", fontSize: 12 }}
+          data-testid="chat-send"
+        >
+          送信
+        </button>
+      </div>
     </div>
   );
 }

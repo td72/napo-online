@@ -43,6 +43,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/me", get(http::me).patch(http::update_me))
         .route("/api/users", get(http::list_users))
         .route("/api/rooms", get(http::list_rooms))
+        .route("/api/rooms/{room_id}/chat", get(http::get_chat_history))
         .route("/api/games", get(http::list_games))
         .route("/api/stats", get(http::list_stats))
         .route("/ws", get(ws::ws_handler))
