@@ -126,20 +126,25 @@ description = "フルデプロイ: web build + binary cross-build + ansible で�
 depends = ["web:build", "build:release"]
 # Ansible が --ask-become-pass で sudo password を 1 回だけ求めて以降を保持する。
 # NOPASSWD sudoers は使わない。
+# raw = true: stdin/stdout を TTY 直結して ansible のパスワードプロンプトを動かす。
+raw = true
 run = "ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/deploy.yml --ask-vault-pass --ask-become-pass"
 
 [tasks."deploy:bin"]
 description = "binary だけ更新(web 変更なし時)。深い意味で一緒なので deploy と同じ playbook を使う"
 depends = ["build:release"]
+raw = true
 run = "ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/deploy.yml --ask-vault-pass --ask-become-pass --skip-tags=web"
 
 [tasks."deploy:web"]
 description = "Web bundle だけ更新"
 depends = ["web:build"]
+raw = true
 run = "ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/deploy.yml --ask-vault-pass --ask-become-pass --skip-tags=binary"
 
 [tasks."deploy:rollback"]
 description = ".prev に戻す(バイナリのみ)"
+raw = true
 run = "ansible-playbook -i deploy/ansible/inventory.yml deploy/ansible/rollback.yml --ask-vault-pass --ask-become-pass"
 
 # ------------------------------------------------------------------------------
