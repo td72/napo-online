@@ -97,21 +97,69 @@
         state: absent
       tags: [binary]
 
-    - name: Restart napo
-      ansible.builtin.systemd:
-        name: napo
-        state: restarted
-        daemon_reload: false
+    - name: Read local Cargo.toml version for version check
+      ansible.builtin.command: >-
+        awk -F\" '/^version = /{print $2; exit}' "{{ playbook_dir }}/../../Cargo.toml"
+      delegate_to: localhost
+      become: false
+      register: cargo_version
+      changed_when: false
 
-    - name: Wait for napo to listen on 127.0.0.1:8080
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: 8080
-        timeout: 30
+    - name: Restart + smoke test(失敗時は .prev に自動 rollback)
+      block:
+        - name: Restart napo
+          ansible.builtin.systemd:
+            name: napo
+            state: restarted
+            daemon_reload: false
 
-    - name: Health check via /healthz
-      ansible.builtin.uri:
-        url: http://127.0.0.1:8080/healthz
-        status_code: 200
-      retries: 5
-      delay: 2
+        - name: Wait for napo to listen on 127.0.0.1:8080
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: 8080
+            timeout: 30
+
+        - name: Health check via /healthz (liveness)
+          ansible.builtin.uri:
+            url: http://127.0.0.1:8080/healthz
+            status_code: 200
+          retries: 5
+          delay: 2
+
+        - name: Smoke test via /readyz (deep check + version match)
+          ansible.builtin.uri:
+            url: http://127.0.0.1:8080/readyz
+            return_content: true
+            status_code: 200
+          register: readyz_resp
+          retries: 5
+          delay: 2
+          failed_when: >-
+            readyz_resp.status != 200
+            or (readyz_resp.json.ok | default(false)) != true
+            or readyz_resp.json.version != cargo_version.stdout
+            or (readyz_resp.json.checks.db | default(false)) != true
+            or (readyz_resp.json.checks.hub | default(false)) != true
+
+        - name: Smoke test passed
+          ansible.builtin.debug:
+            msg: "deploy ok: version={{ readyz_resp.json.version }} checks={{ readyz_resp.json.checks }}"
+
+      rescue:
+        - name: smoke test 失敗 → .prev に rollback
+          ansible.builtin.debug:
+            msg: "SMOKE TEST FAILED, rolling back to .prev"
+
+        - name: Restore .prev binary
+          ansible.builtin.command: mv -f /opt/napo/napo-online.prev /opt/napo/napo-online
+          args:
+            removes: /opt/napo/napo-online.prev
+
+        - name: Restart napo (rolled back)
+          ansible.builtin.systemd:
+            name: napo
+            state: restarted
+
+        - name: Fail the play(deploy 失敗)
+          ansible.builtin.fail:
+            msg: "deploy rolled back: smoke test (/readyz) failed after restart"

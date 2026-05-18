@@ -186,6 +186,17 @@ impl Db {
         })
     }
 
+    /// readiness check 用: `SELECT 1` を実行。ロック中 or open 失敗で Err。
+    pub async fn ping(&self) -> Result<()> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let conn = conn.lock().expect("db poisoned");
+            let _: i64 = conn.query_row("SELECT 1", [], |r| r.get(0))?;
+            Ok(())
+        })
+        .await?
+    }
+
     pub async fn migrate(&self) -> Result<()> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {

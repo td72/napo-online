@@ -7,8 +7,52 @@ use crate::AppState;
 use crate::auth::Claims;
 use crate::error::AppError;
 
+/// liveness: プロセスが生きてるだけを返す軽い check。LB や CF の health probe 用。
 pub async fn healthz() -> StatusCode {
     StatusCode::OK
+}
+
+#[derive(Serialize)]
+pub struct ReadyResponse {
+    pub ok: bool,
+    pub version: &'static str,
+    pub checks: ReadyChecks,
+}
+
+#[derive(Serialize)]
+pub struct ReadyChecks {
+    pub db: bool,
+    pub hub: bool,
+}
+
+/// readiness: 依存先まで叩いて成立性を確認する deep check。
+/// deploy 後 smoke test と外形監視で使う想定。どれか false なら HTTP 503。
+pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<ReadyResponse>) {
+    // DB: 100ms timeout で SELECT 1
+    let db_ok = tokio::time::timeout(std::time::Duration::from_millis(100), state.db.ping())
+        .await
+        .map(|r| r.is_ok())
+        .unwrap_or(false);
+    // Hub: room_count() を読めれば OK(DashMap poison 検出)
+    let hub_ok =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| state.hub.room_count())).is_ok();
+    let ok = db_ok && hub_ok;
+    let status = if ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(ReadyResponse {
+            ok,
+            version: env!("CARGO_PKG_VERSION"),
+            checks: ReadyChecks {
+                db: db_ok,
+                hub: hub_ok,
+            },
+        }),
+    )
 }
 
 #[derive(Serialize)]

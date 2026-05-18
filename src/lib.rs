@@ -53,6 +53,7 @@ pub fn build_router(state: AppState) -> Router {
 
     Router::new()
         .route("/healthz", get(http::healthz))
+        .route("/readyz", get(http::readyz))
         .merge(protected)
         .with_state(state)
 }
