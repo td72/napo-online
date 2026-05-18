@@ -222,10 +222,7 @@ async fn chat_backlog_on_join() {
     .await;
 
     // ChatBacklog を待つ(順序: 実装上 backlog → RoomState の順に来る想定だが念のため wait_for で拾う)
-    let m = wait_for(&mut rb, |m| {
-        matches!(m, ServerMessage::ChatBacklog { .. })
-    })
-    .await;
+    let m = wait_for(&mut rb, |m| matches!(m, ServerMessage::ChatBacklog { .. })).await;
     if let ServerMessage::ChatBacklog { entries } = m {
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].seq, 1);
@@ -283,11 +280,7 @@ async fn chat_long_text_is_truncated() {
     let (mut wa, mut ra, _room_id) = hello_create_room(port, "alice").await;
 
     let long = "x".repeat(600);
-    send(
-        &mut wa,
-        &ClientMessage::Chat { text: long.clone() },
-    )
-    .await;
+    send(&mut wa, &ClientMessage::Chat { text: long.clone() }).await;
     let m = wait_for(&mut ra, |m| matches!(m, ServerMessage::Chat { .. })).await;
     if let ServerMessage::Chat { entry } = m {
         assert_eq!(entry.text.chars().count(), 500);
