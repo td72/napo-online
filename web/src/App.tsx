@@ -324,6 +324,7 @@ function LobbyView() {
   );
   const [devEmail, setDevEmail] = useState("alice@local");
   const [roomIdInput, setRoomIdInput] = useState("");
+  const [biddingMode, setBiddingMode] = useState<"auto" | "manual">("auto");
 
   const isHost = room && myEmail && room.host === myEmail;
   const phaseType = room?.state.type ?? null;
@@ -369,12 +370,21 @@ function LobbyView() {
           <div style={rowStyle}>
             <button
               type="button"
-              onClick={() => send({ type: "create_room" })}
+              onClick={() => send({ type: "create_room", payload: { bidding_mode: biddingMode } })}
               style={btnStyle}
               data-testid="btn-create-room"
             >
               新規作成
             </button>
+            <select
+              value={biddingMode}
+              onChange={(e) => setBiddingMode(e.target.value as "auto" | "manual")}
+              style={{ ...inputStyle, fontSize: 12 }}
+              data-testid="select-bidding-mode"
+            >
+              <option value="auto">立ち合い: 自動</option>
+              <option value="manual">立ち合い: 手動</option>
+            </select>
             <input
               value={roomIdInput}
               onChange={(e) => setRoomIdInput(e.target.value)}
@@ -942,15 +952,24 @@ function GameStage({ layout }: { layout: "pc" | "mobile" }) {
           ) : (
             <GamePC vm={vm} selectedIdx={selectedIdx} onSelectCard={onSelectCard} onPlay={onPlay} />
           )}
-          {overlay === "bid" && (
-            <BidStageOverlay
-              myName={myName}
-              selectedTricks={selectedTricks}
-              selectedTrump={selectedTrump}
-              setSelectedTricks={setSelectedTricks}
-              setSelectedTrump={setSelectedTrump}
+          {overlay === "bid" && room?.bidding_mode === "manual" ? (
+            <ManualBidStageOverlay
+              isHost={room.host === myEmail}
+              hostName={hostDisplayName(room, seats)}
+              seats={seats}
               mobile={layout === "mobile"}
             />
+          ) : (
+            overlay === "bid" && (
+              <BidStageOverlay
+                myName={myName}
+                selectedTricks={selectedTricks}
+                selectedTrump={selectedTrump}
+                setSelectedTricks={setSelectedTricks}
+                setSelectedTrump={setSelectedTrump}
+                mobile={layout === "mobile"}
+              />
+            )
           )}
           {overlay === "partner" && (
             <PartnerStageOverlay mySeat={mySeat} mobile={layout === "mobile"} />
@@ -1098,6 +1117,161 @@ function BidStageOverlay({
         })
       }
     />
+  );
+}
+
+function hostDisplayName(
+  room: { host: string },
+  seats: { seat: number; player_id: string; display_name: string }[] | null,
+): string {
+  if (!seats) return room.host;
+  const s = seats.find((x) => x.player_id === room.host);
+  return s?.display_name ?? room.host;
+}
+
+function ManualBidStageOverlay({
+  isHost,
+  hostName,
+  seats,
+  mobile,
+}: {
+  isHost: boolean;
+  hostName: string;
+  seats: { seat: number; player_id: string; display_name: string }[] | null;
+  mobile?: boolean;
+}) {
+  const send = useStore((s) => s.send);
+  const [declarerSeat, setDeclarerSeat] = useState<number | null>(null);
+  const [tricks, setTricks] = useState(13);
+  const [trump, setTrump] = useState<WireTrump>("S");
+
+  const onConfirm = () => {
+    if (declarerSeat === null) return;
+    send({
+      type: "manual_bid",
+      payload: {
+        declarer_seat: declarerSeat,
+        bid: { tricks, trump },
+      },
+    });
+  };
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 50,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(232,223,200,0.95)",
+        backdropFilter: "blur(3px)",
+      }}
+      data-testid="overlay-manual-bid"
+    >
+      <div
+        style={{
+          background: "var(--bg-primary)",
+          borderRadius: "var(--radius-lg)",
+          padding: mobile ? 18 : 28,
+          maxWidth: 460,
+          width: "92%",
+          boxShadow: "var(--shadow-lg)",
+        }}
+      >
+        <div
+          style={{
+            fontSize: mobile ? 10 : 12,
+            letterSpacing: 4,
+            color: "var(--text-muted)",
+            marginBottom: 4,
+          }}
+        >
+          MANUAL BIDDING
+        </div>
+        <h2 style={{ ...h2Style, marginTop: 0, fontSize: mobile ? 18 : 24 }}>
+          {isHost ? "立ちを決定" : `${hostName} が立ちを決めています`}
+        </h2>
+        {!isHost ? (
+          <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
+            チャットで相談 → ホストが declarer と宣言値を確定します。
+          </p>
+        ) : (
+          <>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 14px" }}>
+              チャットで合意した内容を入力してください。
+            </p>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>declarer</label>
+              <select
+                value={declarerSeat ?? ""}
+                onChange={(e) =>
+                  setDeclarerSeat(e.target.value === "" ? null : Number(e.target.value))
+                }
+                style={inputStyle}
+                data-testid="select-manual-declarer"
+              >
+                <option value="">— 選択 —</option>
+                {(seats ?? []).map((s) => (
+                  <option key={s.seat} value={s.seat}>
+                    seat {s.seat}: {s.display_name}
+                  </option>
+                ))}
+              </select>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>宣言枚数</label>
+              <select
+                value={tricks}
+                onChange={(e) => setTricks(Number(e.target.value))}
+                style={inputStyle}
+                data-testid="select-manual-tricks"
+              >
+                {Array.from({ length: 8 }, (_, i) => 13 + i).map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>スート</label>
+              <select
+                value={trump}
+                onChange={(e) => setTrump(e.target.value as WireTrump)}
+                style={inputStyle}
+                data-testid="select-manual-trump"
+              >
+                <option value="S">♠</option>
+                <option value="H">♥</option>
+                <option value="D">♦</option>
+                <option value="C">♣</option>
+                <option value="NT">ノートラ</option>
+              </select>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={declarerSeat === null}
+                data-testid="btn-manual-bid-confirm"
+                style={{
+                  ...btnStyle,
+                  opacity: declarerSeat === null ? 0.4 : 1,
+                  cursor: declarerSeat === null ? "not-allowed" : "pointer",
+                }}
+              >
+                確定
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

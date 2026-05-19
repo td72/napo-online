@@ -58,7 +58,13 @@ async fn main() {
     }
 
     // alice (idx 0): create room → grab room_id from RoomState
-    send_json(&mut clients[0].0, &ClientMessage::CreateRoom).await;
+    send_json(
+        &mut clients[0].0,
+        &ClientMessage::CreateRoom {
+            bidding_mode: napo_online::protocol::BiddingMode::Auto,
+        },
+    )
+    .await;
     let room_id = wait_for_room_id(&mut clients[0].1).await;
     println!("alice created room {room_id}");
 

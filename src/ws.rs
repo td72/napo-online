@@ -242,8 +242,8 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
             true
         }
         ClientMessage::Ping => send(socket, &ServerMessage::Pong).await.is_ok(),
-        ClientMessage::CreateRoom => {
-            handle_create_room(socket, session).await;
+        ClientMessage::CreateRoom { bidding_mode } => {
+            handle_create_room(socket, session, bidding_mode).await;
             true
         }
         ClientMessage::JoinRoom { room_id } => {
@@ -316,6 +316,18 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
             )
             .await
         }
+        ClientMessage::ManualBid { declarer_seat, bid } => {
+            forward_to_room(
+                socket,
+                session,
+                RoomCommand::ManualBid {
+                    by: session.claims.email.clone(),
+                    declarer_seat,
+                    bid,
+                },
+            )
+            .await
+        }
         ClientMessage::Chat { text } => {
             forward_to_room(
                 socket,
@@ -345,8 +357,16 @@ async fn forward_to_room(socket: &mut WebSocket, session: &Session, cmd: RoomCom
     true
 }
 
-async fn handle_create_room(socket: &mut WebSocket, session: &mut Session) {
-    match session.state.hub.create_room(session.claims.email.clone()) {
+async fn handle_create_room(
+    socket: &mut WebSocket,
+    session: &mut Session,
+    bidding_mode: crate::protocol::BiddingMode,
+) {
+    match session
+        .state
+        .hub
+        .create_room(session.claims.email.clone(), bidding_mode)
+    {
         Ok(room_id) => {
             join_room_inner(socket, session, &room_id).await;
         }

@@ -82,7 +82,13 @@ async fn five_clients_complete_one_hand() {
     }
 
     // alice creates room → grab room_id
-    send(&mut clients[0].0, &ClientMessage::CreateRoom).await;
+    send(
+        &mut clients[0].0,
+        &ClientMessage::CreateRoom {
+            bidding_mode: napo_online::protocol::BiddingMode::Auto,
+        },
+    )
+    .await;
     let room_id = wait_for_room_id(&mut clients[0].1).await;
 
     // bob..eve join

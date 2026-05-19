@@ -12,6 +12,23 @@ pub type RoomId = String;
 /// 各 wire 型に `#[ts(export)]` で適用。
 const TS_DIR: &str = "web/src/types/";
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum BiddingMode {
+    /// 各 seat が WS から順に Bid/Pass を送る通常モード(napo-core 標準)。
+    Auto,
+    /// チャットで相談して host が ManualBid で「declarer + 宣言値」を確定するモード。
+    /// 各 seat の Bid/Pass は server で reject される。
+    Manual,
+}
+
+impl Default for BiddingMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 #[ts(export)]
@@ -20,7 +37,10 @@ pub enum ClientMessage {
     Hello {
         display_name: String,
     },
-    CreateRoom,
+    CreateRoom {
+        #[serde(default)]
+        bidding_mode: BiddingMode,
+    },
     JoinRoom {
         room_id: RoomId,
     },
@@ -33,6 +53,11 @@ pub enum ClientMessage {
     /// COM(bot)プレイヤーを追加。ロビー期間中、host のみ。
     AddCom {
         display_name: String,
+    },
+    /// manual モードで host が「declarer + 宣言値」を確定する。
+    ManualBid {
+        declarer_seat: usize,
+        bid: WireBid,
     },
 
     // 全員操作
@@ -264,6 +289,9 @@ pub struct RoomView {
     pub host: PlayerId,
     pub players: Vec<PlayerView>,
     pub state: RoomPhase,
+    /// 部屋作成時に決まる立ち合いモード。client UI が分岐する。
+    #[serde(default)]
+    pub bidding_mode: BiddingMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -358,6 +386,7 @@ mod tests {
                     is_com: false,
                 }],
                 state: RoomPhase::Lobby,
+                bidding_mode: BiddingMode::Auto,
             },
         };
         let s = serde_json::to_string(&m).unwrap();

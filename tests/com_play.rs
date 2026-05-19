@@ -93,7 +93,13 @@ async fn host_can_add_four_coms_and_start_match() {
     .await;
     drain_until(&mut r, |m| matches!(m, ServerMessage::Welcome { .. })).await;
 
-    send_msg(&mut w, &ClientMessage::CreateRoom).await;
+    send_msg(
+        &mut w,
+        &ClientMessage::CreateRoom {
+            bidding_mode: napo_online::protocol::BiddingMode::Auto,
+        },
+    )
+    .await;
     drain_until(&mut r, |m| matches!(m, ServerMessage::RoomState { .. })).await;
 
     // COM × 4 追加 → 各 broadcast を待つ

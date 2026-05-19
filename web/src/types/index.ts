@@ -17,3 +17,4 @@ export type { RoomView } from "./RoomView";
 export type { PlayerView } from "./PlayerView";
 export type { RoomPhase } from "./RoomPhase";
 export type { ChatEntry } from "./ChatEntry";
+export type { BiddingMode } from "./BiddingMode";

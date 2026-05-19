@@ -186,6 +186,18 @@ impl GameSession {
         self.session.current_hand().current_player()
     }
 
+    pub fn num_players(&self) -> usize {
+        self.seat_to_player.len()
+    }
+
+    /// 現局が Bidding phase か。manual_bid のガード用。
+    pub fn in_bidding_phase(&self) -> bool {
+        matches!(
+            self.session.current_hand().phase(),
+            napo_core::Phase::Bidding { .. }
+        )
+    }
+
     /// COM(bot)が打つべき手を選ぶ。雑な戦略:legal_actions の先頭。
     /// Bidding は legal_actions の先頭が必ず Pass なので「常に pass」になる。
     pub fn pick_com_action(&self) -> Option<WireAction> {
@@ -207,6 +219,10 @@ impl GameSession {
 
     pub fn hand_index(&self) -> u32 {
         self.session.hand_count() as u32
+    }
+
+    pub fn rules(&self) -> &Rules {
+        self.session.current_hand().rules()
     }
 
     pub fn apply(
@@ -388,6 +404,17 @@ impl GameSession {
 
         events
     }
+}
+
+/// manual_bid 用の事前 validate(napo-core Rules の標準範囲)。Ok(()) なら apply 可。
+pub fn validate_bid_range(bid: &crate::protocol::WireBid) -> Result<(), String> {
+    if !(13..=20).contains(&bid.tricks) {
+        return Err(format!(
+            "tricks out of range: {} (expected 13..=20)",
+            bid.tricks
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]

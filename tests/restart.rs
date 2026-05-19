@@ -151,7 +151,13 @@ async fn match_survives_server_restart_via_snapshot() {
         .await;
         let _ = recv(&mut clients[i].1).await; // welcome
     }
-    send(&mut clients[0].0, &ClientMessage::CreateRoom).await;
+    send(
+        &mut clients[0].0,
+        &ClientMessage::CreateRoom {
+            bidding_mode: napo_online::protocol::BiddingMode::Auto,
+        },
+    )
+    .await;
     let room_id = wait_for_room_id(&mut clients[0].1).await;
     for (w, r) in clients.iter_mut().take(5).skip(1) {
         send(

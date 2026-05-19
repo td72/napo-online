@@ -121,7 +121,13 @@ async fn hello_create_room(port: u16, name: &str) -> (Writer, Reader, RoomId) {
         },
     )
     .await;
-    send(&mut w, &ClientMessage::CreateRoom).await;
+    send(
+        &mut w,
+        &ClientMessage::CreateRoom {
+            bidding_mode: napo_online::protocol::BiddingMode::Auto,
+        },
+    )
+    .await;
     let room_id = wait_for_room_id(&mut r).await;
     (w, r, room_id)
 }

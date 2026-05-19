@@ -54,7 +54,11 @@ impl Hub {
         }
     }
 
-    pub fn create_room(&self, host: PlayerId) -> Result<RoomId, CreateRoomError> {
+    pub fn create_room(
+        &self,
+        host: PlayerId,
+        bidding_mode: crate::protocol::BiddingMode,
+    ) -> Result<RoomId, CreateRoomError> {
         if self.rooms.len() >= self.max_rooms {
             return Err(CreateRoomError::MaxRoomsReached);
         }
@@ -68,6 +72,7 @@ impl Hub {
             self.hands_per_match,
             self.db.clone(),
             self.timers,
+            bidding_mode,
         );
 
         let rooms_for_cleanup = self.rooms.clone();

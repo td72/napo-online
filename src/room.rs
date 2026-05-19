@@ -12,8 +12,8 @@ use crate::db::{Db, GameOutcome, GameRecord};
 use crate::game_adapter::{ApplyOutcome, FinishedHandSummary, GameSession};
 use crate::now_unix;
 use crate::protocol::{
-    PlayerId, PlayerView, PublicEvent, RoomId, RoomPhase as WireRoomPhase, RoomView, ServerMessage,
-    WireAction,
+    BiddingMode, PlayerId, PlayerView, PublicEvent, RoomId, RoomPhase as WireRoomPhase, RoomView,
+    ServerMessage, WireAction, WireBid,
 };
 
 /// 永続化用のスナップショット。`napo_core::Match` を直接埋め込む(serde feature 必須)。
@@ -30,6 +30,9 @@ pub struct RoomSnapshot {
     pub session: Option<SessionSnapshot>,
     pub next_ready: Vec<usize>,
     pub current_hand_started_at: Option<i64>,
+    /// 旧 snapshot 復元時は Auto。
+    #[serde(default)]
+    pub bidding_mode: BiddingMode,
 }
 
 pub const ROOM_SNAPSHOT_SCHEMA: u32 = 1;
@@ -106,6 +109,12 @@ pub enum RoomCommand {
         by: PlayerId,
         display_name: String,
     },
+    /// manual モードで host が立ちを確定する。
+    ManualBid {
+        by: PlayerId,
+        declarer_seat: usize,
+        bid: WireBid,
+    },
     Chat {
         player: PlayerId,
         text: String,
@@ -153,6 +162,7 @@ pub struct Room {
     db: Db,
     timers: RoomTimers,
     current_hand_started_at: Option<i64>,
+    bidding_mode: BiddingMode,
 }
 
 const CHAT_TEXT_MAX_CHARS: usize = 500;
@@ -175,6 +185,7 @@ impl Room {
         hands_per_match: u32,
         db: Db,
         timers: RoomTimers,
+        bidding_mode: BiddingMode,
     ) -> Self {
         Self {
             id,
@@ -189,6 +200,7 @@ impl Room {
             db,
             timers,
             current_hand_started_at: None,
+            bidding_mode,
         }
     }
 
@@ -246,6 +258,7 @@ impl Room {
             db,
             timers,
             current_hand_started_at: snapshot.current_hand_started_at,
+            bidding_mode: snapshot.bidding_mode,
         }
     }
 
@@ -284,6 +297,7 @@ impl Room {
                 v
             },
             current_hand_started_at: self.current_hand_started_at,
+            bidding_mode: self.bidding_mode,
         }
     }
 
@@ -375,6 +389,11 @@ impl Room {
             RoomCommand::AbortHand { by } => self.on_abort_hand(by).await,
             RoomCommand::EndMatch { by } => self.on_end_match(by).await,
             RoomCommand::AddCom { by, display_name } => self.on_add_com(by, display_name).await,
+            RoomCommand::ManualBid {
+                by,
+                declarer_seat,
+                bid,
+            } => self.on_manual_bid(by, declarer_seat, bid).await,
             RoomCommand::Chat { player, text } => self.on_chat(player, text).await,
         }
     }
@@ -703,6 +722,20 @@ impl Room {
                 .await;
             return;
         }
+        // manual モード時、Bid/Pass は ManualBid 経由のみ。直接 SubmitAction を蹴る。
+        if self.bidding_mode == BiddingMode::Manual
+            && matches!(action, WireAction::Bid { .. } | WireAction::Pass)
+        {
+            self.send_to(
+                &player,
+                error(
+                    "manual_bid_only",
+                    "manual モードでは Bid/Pass は host の ManualBid 経由で行う",
+                ),
+            )
+            .await;
+            return;
+        }
         let Some(session) = self.session.as_mut() else {
             return;
         };
@@ -717,6 +750,88 @@ impl Room {
                     .await;
             }
         }
+    }
+
+    /// manual モードで host が立ち合いを確定する。
+    /// napo-core の Bidding phase に対し「declarer 以外を Pass + declarer を Bid」を順に
+    /// apply して 1 回の入札ラウンドを通過させる。napo-core は無変更。
+    async fn on_manual_bid(&mut self, by: PlayerId, declarer_seat: usize, bid: WireBid) {
+        if by != self.host {
+            self.send_to(&by, error("not_host", "only host can manual bid"))
+                .await;
+            return;
+        }
+        if self.bidding_mode != BiddingMode::Manual {
+            self.send_to(
+                &by,
+                error("wrong_mode", "this room is not in manual bidding mode"),
+            )
+            .await;
+            return;
+        }
+        if self.phase != LocalPhase::Playing {
+            self.send_to(&by, error("wrong_phase", "not in playing phase"))
+                .await;
+            return;
+        }
+        let num_players = match self.session.as_ref() {
+            Some(s) if s.in_bidding_phase() => s.num_players(),
+            Some(_) => {
+                self.send_to(&by, error("wrong_phase", "current hand is not in Bidding"))
+                    .await;
+                return;
+            }
+            None => return,
+        };
+        if declarer_seat >= num_players {
+            self.send_to(&by, error("invalid_seat", "declarer_seat out of range"))
+                .await;
+            return;
+        }
+        if let Err(e) = crate::game_adapter::validate_bid_range(&bid) {
+            self.send_to(&by, error("invalid_bid", &e)).await;
+            return;
+        }
+
+        // 5 seat を順に Bid/Pass で進める。drop borrow scope per iter で借用衝突を避ける。
+        for _ in 0..num_players {
+            let (cur_seat, cur_pid) = {
+                let Some(session) = self.session.as_ref() else {
+                    break;
+                };
+                let Some(seat) = session.current_player() else {
+                    break;
+                };
+                let Some(pid) = session.seat_to_player().get(seat).cloned() else {
+                    break;
+                };
+                (seat, pid)
+            };
+            let action = if cur_seat == declarer_seat {
+                WireAction::Bid {
+                    tricks: bid.tricks,
+                    trump: bid.trump,
+                }
+            } else {
+                WireAction::Pass
+            };
+            let res = self
+                .session
+                .as_mut()
+                .map(|s| s.apply(&cur_pid, action))
+                .expect("session present");
+            match res {
+                Ok(outcome) => self.dispatch_outcome(outcome).await,
+                Err(e) => {
+                    tracing::error!(room = %self.id, seat = cur_seat, error = %e, "manual_bid step failed");
+                    self.send_to(&by, error("manual_bid_failed", &e.to_string()))
+                        .await;
+                    return;
+                }
+            }
+        }
+        self.persist().await;
+        self.drive_coms().await;
     }
 
     /// 次の to_act が COM プレイヤーである限り、ディレイ付きで自動的に手を打つ。
@@ -742,6 +857,11 @@ impl Room {
             };
             if !member.is_com {
                 tracing::debug!(room = %self.id, step, %pid, "drive_coms: human turn, exit");
+                return;
+            }
+            // manual モードの Bidding phase は host の ManualBid 待ちなので COM も動かない。
+            if self.bidding_mode == BiddingMode::Manual && session.in_bidding_phase() {
+                tracing::debug!(room = %self.id, step, "drive_coms: manual bidding, exit");
                 return;
             }
             tracing::debug!(room = %self.id, step, com = %pid, "drive_coms: COM turn, sleeping");
@@ -1059,6 +1179,7 @@ impl Room {
                 },
                 LocalPhase::Ended => WireRoomPhase::Ended,
             },
+            bidding_mode: self.bidding_mode,
         }
     }
 
