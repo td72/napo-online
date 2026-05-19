@@ -9,7 +9,7 @@ axum = { version = "0.8.9", features = ["ws", "macros"] }
 dashmap = "6"
 dotenvy = "0.15.7"
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
-napo-core = { git = "https://github.com/td72/napo-core.git", tag = "v0.2.1", features = ["serde"] }
+napo-core = { git = "https://github.com/td72/napo-core.git", tag = "v0.3.0", features = ["serde"] }
 rand = "0.10.1"
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls"] }
 rusqlite = { version = "0.39.0", features = ["bundled"] }

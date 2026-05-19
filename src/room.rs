@@ -774,64 +774,25 @@ impl Room {
                 .await;
             return;
         }
-        let num_players = match self.session.as_ref() {
-            Some(s) if s.in_bidding_phase() => s.num_players(),
-            Some(_) => {
-                self.send_to(&by, error("wrong_phase", "current hand is not in Bidding"))
-                    .await;
-                return;
-            }
-            None => return,
+        let Some(session) = self.session.as_mut() else {
+            return;
         };
-        if declarer_seat >= num_players {
-            self.send_to(&by, error("invalid_seat", "declarer_seat out of range"))
+        if !session.in_bidding_phase() {
+            self.send_to(&by, error("wrong_phase", "current hand is not in Bidding"))
                 .await;
             return;
         }
-        if let Err(e) = crate::game_adapter::validate_bid_range(&bid) {
-            self.send_to(&by, error("invalid_bid", &e)).await;
-            return;
-        }
-
-        // 5 seat を順に Bid/Pass で進める。drop borrow scope per iter で借用衝突を避ける。
-        for _ in 0..num_players {
-            let (cur_seat, cur_pid) = {
-                let Some(session) = self.session.as_ref() else {
-                    break;
-                };
-                let Some(seat) = session.current_player() else {
-                    break;
-                };
-                let Some(pid) = session.seat_to_player().get(seat).cloned() else {
-                    break;
-                };
-                (seat, pid)
-            };
-            let action = if cur_seat == declarer_seat {
-                WireAction::Bid {
-                    tricks: bid.tricks,
-                    trump: bid.trump,
-                }
-            } else {
-                WireAction::Pass
-            };
-            let res = self
-                .session
-                .as_mut()
-                .map(|s| s.apply(&cur_pid, action))
-                .expect("session present");
-            match res {
-                Ok(outcome) => self.dispatch_outcome(outcome).await,
-                Err(e) => {
-                    tracing::error!(room = %self.id, seat = cur_seat, error = %e, "manual_bid step failed");
-                    self.send_to(&by, error("manual_bid_failed", &e.to_string()))
-                        .await;
-                    return;
-                }
+        match session.apply_skip_bidding(declarer_seat, bid) {
+            Ok(outcome) => {
+                self.dispatch_outcome(outcome).await;
+                self.persist().await;
+                self.drive_coms().await;
+            }
+            Err(e) => {
+                self.send_to(&by, error("manual_bid_failed", &e.to_string()))
+                    .await;
             }
         }
-        self.persist().await;
-        self.drive_coms().await;
     }
 
     /// 次の to_act が COM プレイヤーである限り、ディレイ付きで自動的に手を打つ。

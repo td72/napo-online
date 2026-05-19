@@ -1192,8 +1192,8 @@ dependencies = [
 
 [[package]]
 name = "napo-core"
-version = "0.2.1"
-source = "git+https://github.com/td72/napo-core.git?tag=v0.2.1#48aca39a425dec51b8dae0c9882975b2befed625"
+version = "0.3.0"
+source = "git+https://github.com/td72/napo-core.git?tag=v0.3.0#57e74ca7b4a04f725eae9601d943f6e8f3aab9a8"
 dependencies = [
  "rand 0.10.1",
  "serde",

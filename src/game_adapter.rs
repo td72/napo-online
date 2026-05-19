@@ -186,10 +186,6 @@ impl GameSession {
         self.session.current_hand().current_player()
     }
 
-    pub fn num_players(&self) -> usize {
-        self.seat_to_player.len()
-    }
-
     /// 現局が Bidding phase か。manual_bid のガード用。
     pub fn in_bidding_phase(&self) -> bool {
         matches!(
@@ -221,8 +217,29 @@ impl GameSession {
         self.session.hand_count() as u32
     }
 
-    pub fn rules(&self) -> &Rules {
-        self.session.current_hand().rules()
+    /// napo-core の `skip_bidding` を呼んで manual bidding を 1 step で確定する。
+    /// NapoleonDecided event + 全 seat の observation を含む ApplyOutcome を返す。
+    pub fn apply_skip_bidding(
+        &mut self,
+        declarer: usize,
+        bid: WireBid,
+    ) -> Result<ApplyOutcome, AdapterError> {
+        let core_bid = Bid::new(bid.tricks, wire_to_trump(bid.trump));
+        self.session
+            .skip_bidding(declarer, core_bid)
+            .map_err(AdapterError::Core)?;
+        self.last_phase = self.session.current_hand().phase().clone();
+        Ok(ApplyOutcome {
+            events: vec![PublicEvent::NapoleonDecided {
+                seat: declarer,
+                bid,
+            }],
+            observations: self.observations_for_all(),
+            hand_finished: false,
+            match_finished: false,
+            hand_scores: None,
+            cumulative_scores: self.cumulative_scores(),
+        })
     }
 
     pub fn apply(
@@ -404,17 +421,6 @@ impl GameSession {
 
         events
     }
-}
-
-/// manual_bid 用の事前 validate(napo-core Rules の標準範囲)。Ok(()) なら apply 可。
-pub fn validate_bid_range(bid: &crate::protocol::WireBid) -> Result<(), String> {
-    if !(13..=20).contains(&bid.tricks) {
-        return Err(format!(
-            "tricks out of range: {} (expected 13..=20)",
-            bid.tricks
-        ));
-    }
-    Ok(())
 }
 
 #[derive(Debug, Clone)]
