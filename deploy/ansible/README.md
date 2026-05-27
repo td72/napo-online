@@ -74,7 +74,6 @@ $EDITOR deploy/ansible/inventory.yml
 | `ansible_host` | `napo.example.com` または IP |
 | `ansible_user` | `ubuntu` |
 | `napo_domain` | `napo.example.com` |
-| `napo_caddy_email` | Let's Encrypt 通知用 |
 | `napo_cf_team` | `tedsum.cloudflareaccess.com` |
 | `napo_cf_aud` | CF Access App AUD |
 

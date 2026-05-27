@@ -14,9 +14,8 @@ all:
       # ansible_port: 22
       # ansible_ssh_private_key_file: ~/.ssh/napo_deploy
   vars:
-    # --- ドメイン / Caddy ---
+    # --- ドメイン ---
     napo_domain: napo.td72.dev # ← 実ドメイン
-    napo_caddy_email: REDACTED@example.com # ← Let's Encrypt 通知用
 
     # --- Cloudflare Access ---
     napo_cf_team: td72.cloudflareaccess.com  # ← CF Access team domain
