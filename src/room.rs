@@ -177,6 +177,8 @@ fn chrono_millis() -> i64 {
 }
 
 impl Room {
+    // bidding_mode 追加で 8 引数になった。builder にするほどでもないので allow。
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: RoomId,
         host: PlayerId,

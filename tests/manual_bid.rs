@@ -246,7 +246,9 @@ async fn submit_bid_rejected_in_manual_mode() {
             let Ok(Some(frame)) = timeout(remaining, r.next()).await else {
                 break;
             };
-            let Ok(Message::Text(t)) = frame else { continue };
+            let Ok(Message::Text(t)) = frame else {
+                continue;
+            };
             let Ok(msg) = serde_json::from_str::<ServerMessage>(t.as_ref()) else {
                 continue;
             };

@@ -12,21 +12,16 @@ pub type RoomId = String;
 /// 各 wire 型に `#[ts(export)]` で適用。
 const TS_DIR: &str = "web/src/types/";
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum BiddingMode {
     /// 各 seat が WS から順に Bid/Pass を送る通常モード(napo-core 標準)。
+    #[default]
     Auto,
     /// チャットで相談して host が ManualBid で「declarer + 宣言値」を確定するモード。
     /// 各 seat の Bid/Pass は server で reject される。
     Manual,
-}
-
-impl Default for BiddingMode {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
