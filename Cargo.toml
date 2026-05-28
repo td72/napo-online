@@ -17,6 +17,8 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 tokio = { version = "1.52.2", features = ["full"] }
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.16", default-features = false }
 tower = "0.5.3"
 tower-http = { version = "0.6.8", features = ["trace", "compression-zstd", "fs"] }
 tracing = "0.1.44"

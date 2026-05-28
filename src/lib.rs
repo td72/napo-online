@@ -5,6 +5,7 @@ pub mod error;
 pub mod game_adapter;
 pub mod http;
 pub mod hub;
+pub mod metrics;
 pub mod protocol;
 pub mod room;
 pub mod ws;
@@ -14,6 +15,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::middleware;
 use axum::routing::get;
+use metrics_exporter_prometheus::PrometheusHandle;
 
 use crate::auth::Verifier;
 use crate::config::Config;
@@ -26,6 +28,7 @@ pub struct AppState {
     pub verifier: Option<Arc<Verifier>>,
     pub hub: Hub,
     pub db: Db,
+    pub metrics: PrometheusHandle,
 }
 
 /// 現在の Unix 秒。SystemTime が EPOCH より前(時計巻き戻し等)の場合は 0 を返す。
@@ -55,6 +58,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(http::healthz))
         .route("/readyz", get(http::readyz))
+        .route("/metrics", get(metrics::handler))
         .merge(protected)
         .with_state(state)
 }

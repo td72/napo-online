@@ -3,13 +3,8 @@ import type { BiddingMode } from "./BiddingMode";
 import type { PlayerView } from "./PlayerView";
 import type { RoomPhase } from "./RoomPhase";
 
-export type RoomView = {
-  room_id: string;
-  host: string;
-  players: Array<PlayerView>;
-  state: RoomPhase;
-  /**
-   * 部屋作成時に決まる立ち合いモード。client UI が分岐する。
-   */
-  bidding_mode: BiddingMode;
-};
+export type RoomView = { room_id: string, host: string, players: Array<PlayerView>, state: RoomPhase, 
+/**
+ * 部屋作成時に決まる立ち合いモード。client UI が分岐する。
+ */
+bidding_mode: BiddingMode, };

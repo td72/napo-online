@@ -5,40 +5,14 @@ import type { RoomView } from "./RoomView";
 import type { SeatAssignment } from "./SeatAssignment";
 import type { WireObservation } from "./WireObservation";
 
-export type ServerMessage =
-  | {
-      type: "welcome";
-      payload: {
-        player_id: string;
-        server_version: string;
-        /**
-         * 接続者がまだ参加中の room がある場合の room_id。
-         * 切断 → 再接続時、client はこれを見て自動で JoinRoom を送って復帰する。
-         */
-        current_room?: string | null;
-      };
-    }
-  | { type: "room_state"; payload: { state: RoomView } }
-  | { type: "error"; payload: { code: string; message: string } }
-  | { type: "pong" }
-  | { type: "event"; payload: { event: PublicEvent } }
-  | { type: "observation"; payload: { observation: WireObservation } }
-  | {
-      type: "match_started";
-      payload: {
-        hand_count: number;
-        seats: Array<SeatAssignment>;
-        /**
-         * 1局目のシード。`base_seed = seed`、各局は `seed + hand_index` で生成される(`napo_core::Match`)。
-         * クライアントが `napo_core::Match::new(Rules::default(), seed)` で同じ局を再現できる。
-         */
-        match_seed: bigint;
-      };
-    }
-  | { type: "hand_ended"; payload: { scores: Array<number>; cumulative: Array<number> } }
-  | { type: "next_hand_ready"; payload: { ready_seats: Array<number> } }
-  | { type: "match_ended"; payload: { final_scores: Array<number> } }
-  | { type: "player_disconnected"; payload: { seat: number; since_ms: bigint } }
-  | { type: "player_reconnected"; payload: { seat: number } }
-  | { type: "chat"; payload: { entry: ChatEntry } }
-  | { type: "chat_backlog"; payload: { entries: Array<ChatEntry> } };
+export type ServerMessage = { "type": "welcome", "payload": { player_id: string, server_version: string, 
+/**
+ * 接続者がまだ参加中の room がある場合の room_id。
+ * 切断 → 再接続時、client はこれを見て自動で JoinRoom を送って復帰する。
+ */
+current_room?: string | null, } } | { "type": "room_state", "payload": { state: RoomView, } } | { "type": "error", "payload": { code: string, message: string, } } | { "type": "pong" } | { "type": "event", "payload": { event: PublicEvent, } } | { "type": "observation", "payload": { observation: WireObservation, } } | { "type": "match_started", "payload": { hand_count: number, seats: Array<SeatAssignment>, 
+/**
+ * 1局目のシード。`base_seed = seed`、各局は `seed + hand_index` で生成される(`napo_core::Match`)。
+ * クライアントが `napo_core::Match::new(Rules::default(), seed)` で同じ局を再現できる。
+ */
+match_seed: bigint, } } | { "type": "hand_ended", "payload": { scores: Array<number>, cumulative: Array<number>, } } | { "type": "next_hand_ready", "payload": { ready_seats: Array<number>, } } | { "type": "match_ended", "payload": { final_scores: Array<number>, } } | { "type": "player_disconnected", "payload": { seat: number, since_ms: bigint, } } | { "type": "player_reconnected", "payload": { seat: number, } } | { "type": "chat", "payload": { entry: ChatEntry, } } | { "type": "chat_backlog", "payload": { entries: Array<ChatEntry>, } };

@@ -76,7 +76,45 @@ struct Session {
 
 const MAX_CONSECUTIVE_THROTTLES: u32 = 30;
 
+fn client_msg_type(msg: &ClientMessage) -> &'static str {
+    match msg {
+        ClientMessage::Hello { .. } => "hello",
+        ClientMessage::CreateRoom { .. } => "create_room",
+        ClientMessage::JoinRoom { .. } => "join_room",
+        ClientMessage::LeaveRoom => "leave_room",
+        ClientMessage::StartMatch => "start_match",
+        ClientMessage::AbortHand => "abort_hand",
+        ClientMessage::EndMatch => "end_match",
+        ClientMessage::AddCom { .. } => "add_com",
+        ClientMessage::ManualBid { .. } => "manual_bid",
+        ClientMessage::NextHand => "next_hand",
+        ClientMessage::SubmitAction { .. } => "submit_action",
+        ClientMessage::Chat { .. } => "chat",
+        ClientMessage::Ping => "ping",
+    }
+}
+
+fn server_msg_type(msg: &ServerMessage) -> &'static str {
+    match msg {
+        ServerMessage::Welcome { .. } => "welcome",
+        ServerMessage::RoomState { .. } => "room_state",
+        ServerMessage::Error { .. } => "error",
+        ServerMessage::Pong => "pong",
+        ServerMessage::Event { .. } => "event",
+        ServerMessage::Observation { .. } => "observation",
+        ServerMessage::MatchStarted { .. } => "match_started",
+        ServerMessage::HandEnded { .. } => "hand_ended",
+        ServerMessage::NextHandReady { .. } => "next_hand_ready",
+        ServerMessage::MatchEnded { .. } => "match_ended",
+        ServerMessage::PlayerDisconnected { .. } => "player_disconnected",
+        ServerMessage::PlayerReconnected { .. } => "player_reconnected",
+        ServerMessage::Chat { .. } => "chat",
+        ServerMessage::ChatBacklog { .. } => "chat_backlog",
+    }
+}
+
 async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
+    metrics::gauge!("napo_players_online").increment(1.0);
     tracing::info!(email = %claims.email, "ws connected");
 
     // touch last_seen と既存ハンドル取得(再接続でも display_name を保持)
@@ -169,6 +207,7 @@ async fn handle_socket(mut socket: WebSocket, claims: Claims, state: AppState) {
             })
             .await;
     }
+    metrics::gauge!("napo_players_online").decrement(1.0);
     tracing::info!(email = %session.claims.email, "ws closed");
 }
 
@@ -204,6 +243,7 @@ async fn handle_text(socket: &mut WebSocket, session: &mut Session, text: &str) 
                 .is_ok();
         }
     };
+    metrics::counter!("napo_ws_messages_total", "direction" => "in", "type" => client_msg_type(&msg)).increment(1);
     match msg {
         ClientMessage::Hello { display_name } => {
             tracing::info!(email = %session.claims.email, %display_name, "hello");
@@ -438,6 +478,7 @@ async fn handle_leave_room(session: &mut Session) {
 }
 
 async fn send(socket: &mut WebSocket, msg: &ServerMessage) -> Result<(), axum::Error> {
+    metrics::counter!("napo_ws_messages_total", "direction" => "out", "type" => server_msg_type(msg)).increment(1);
     let s = serde_json::to_string(msg).expect("serialize ServerMessage");
     socket.send(Message::Text(s.into())).await
 }

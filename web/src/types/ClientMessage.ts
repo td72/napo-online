@@ -3,17 +3,4 @@ import type { BiddingMode } from "./BiddingMode";
 import type { WireAction } from "./WireAction";
 import type { WireBid } from "./WireBid";
 
-export type ClientMessage =
-  | { type: "hello"; payload: { display_name: string } }
-  | { type: "create_room"; payload: { bidding_mode: BiddingMode } }
-  | { type: "join_room"; payload: { room_id: string } }
-  | { type: "leave_room" }
-  | { type: "start_match" }
-  | { type: "abort_hand" }
-  | { type: "end_match" }
-  | { type: "add_com"; payload: { display_name: string } }
-  | { type: "manual_bid"; payload: { declarer_seat: number; bid: WireBid } }
-  | { type: "next_hand" }
-  | { type: "submit_action"; payload: { action: WireAction } }
-  | { type: "chat"; payload: { text: string } }
-  | { type: "ping" };
+export type ClientMessage = { "type": "hello", "payload": { display_name: string, } } | { "type": "create_room", "payload": { bidding_mode: BiddingMode, } } | { "type": "join_room", "payload": { room_id: string, } } | { "type": "leave_room" } | { "type": "start_match" } | { "type": "abort_hand" } | { "type": "end_match" } | { "type": "add_com", "payload": { display_name: string, } } | { "type": "manual_bid", "payload": { declarer_seat: number, bid: WireBid, } } | { "type": "next_hand" } | { "type": "submit_action", "payload": { action: WireAction, } } | { "type": "chat", "payload": { text: string, } } | { "type": "ping" };
