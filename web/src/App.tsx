@@ -29,12 +29,46 @@ import type { ChatEntry, WirePlayedCard, WireTrump } from "./types";
 
 function App() {
   const observation = useStore((s) => s.observation);
+  const room = useStore((s) => s.room);
   const [layout, setLayout] = useState<"pc" | "mobile">("pc");
+
+  // 試合中(observation あり)は LobbyView を隠すため、room 内チャットも見えなくなる。
+  // PC は右サイドバー、mobile は盤面下に ChatPanel を出す。
+  const showChatAlongside = !!(observation && room);
 
   return (
     <div style={pageStyle}>
       <Header layout={layout} setLayout={setLayout} />
-      {observation ? <GameStage layout={layout} /> : <LobbyView />}
+      {observation ? (
+        showChatAlongside && layout === "pc" ? (
+          <div style={{ display: "flex", alignItems: "stretch" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <GameStage layout={layout} />
+            </div>
+            <aside
+              style={{
+                width: 300,
+                flexShrink: 0,
+                padding: "16px 16px 16px 0",
+                display: "flex",
+              }}
+            >
+              <ChatPanel variant="sidebar" />
+            </aside>
+          </div>
+        ) : (
+          <>
+            <GameStage layout={layout} />
+            {showChatAlongside && (
+              <div style={{ padding: "0 16px 16px" }}>
+                <ChatPanel variant="bottom" />
+              </div>
+            )}
+          </>
+        )
+      ) : (
+        <LobbyView />
+      )}
       <DevPreview />
     </div>
   );
@@ -513,7 +547,9 @@ function LobbyView() {
   );
 }
 
-function ChatPanel() {
+type ChatVariant = "inline" | "sidebar" | "bottom";
+
+function ChatPanel({ variant = "inline" }: { variant?: ChatVariant }) {
   const chatLog = useStore((s) => s.chatLog);
   const send = useStore((s) => s.send);
   const myEmail = useStore((s) => s.myEmail);
@@ -522,6 +558,7 @@ function ChatPanel() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isSidebar = variant === "sidebar";
 
   // 末尾追加(新着)時のみ自動スクロール。scrollback の先頭挿入では維持。
   const prevLastSeqRef = useRef<bigint | null>(null);
@@ -576,12 +613,17 @@ function ChatPanel() {
   return (
     <div
       style={{
-        marginTop: 12,
+        marginTop: variant === "inline" ? 12 : 0,
+        flex: isSidebar ? 1 : undefined,
+        display: isSidebar ? "flex" : undefined,
+        flexDirection: isSidebar ? "column" : undefined,
+        minHeight: 0,
         border: "1px solid var(--border-color)",
         borderRadius: "var(--radius-sm)",
         background: "var(--bg-primary)",
       }}
       data-testid="chat-panel"
+      data-variant={variant}
     >
       <div
         style={{
@@ -597,8 +639,9 @@ function ChatPanel() {
       <div
         ref={scrollRef}
         style={{
-          maxHeight: 200,
-          minHeight: 80,
+          ...(isSidebar
+            ? { flex: 1, minHeight: 0 }
+            : { maxHeight: variant === "bottom" ? 240 : 200, minHeight: 80 }),
           overflowY: "auto",
           padding: "6px 10px",
           fontSize: 12,
