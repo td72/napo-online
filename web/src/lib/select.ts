@@ -192,6 +192,23 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
   const leadCard = observation.current_trick[0]?.card;
   const leadSuit = effectiveLeadSuit(leadCard, isNoTrump ? null : trumpSuit, isNoTrump);
 
+  // 直前 completed trick。hand 1 trick 目(completed.length === 0)は null。
+  const lastCompleted =
+    observation.completed.length > 0
+      ? observation.completed[observation.completed.length - 1]
+      : null;
+  const lastTrick = lastCompleted
+    ? {
+        plays: lastCompleted.plays.map((p) => ({
+          card: p.card,
+          player: nameOf(p.seat),
+          pos: seatToFieldPos(mySeat, p.seat, observation.num_players),
+          isWinner: p.seat === lastCompleted.winner,
+        })),
+        winnerName: nameOf(lastCompleted.winner),
+      }
+    : null;
+
   return {
     phase: observation.to_act === mySeat ? "turn" : "wait",
     inPlay,
@@ -212,6 +229,7 @@ export function selectGameVm(input: SelectInput): GamePcViewModel | null {
     totalGames: hands_per_match ?? 10,
     trickNo: observation.trick_index + 1,
     totalTricks: 10,
+    lastTrick,
   };
 }
 
