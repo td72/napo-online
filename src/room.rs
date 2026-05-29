@@ -149,6 +149,17 @@ enum LocalPhase {
     Ended,
 }
 
+impl LocalPhase {
+    fn label(self) -> &'static str {
+        match self {
+            LocalPhase::Lobby => "lobby",
+            LocalPhase::Playing => "playing",
+            LocalPhase::BetweenHands => "between_hands",
+            LocalPhase::Ended => "ended",
+        }
+    }
+}
+
 pub struct Room {
     id: RoomId,
     host: PlayerId,
@@ -189,6 +200,7 @@ impl Room {
         timers: RoomTimers,
         bidding_mode: BiddingMode,
     ) -> Self {
+        metrics::gauge!("napo_rooms_total", "phase" => "lobby").increment(1.0);
         Self {
             id,
             host,
@@ -247,6 +259,7 @@ impl Room {
             PhaseSnapshot::BetweenHands => LocalPhase::BetweenHands,
             PhaseSnapshot::Ended => LocalPhase::Ended,
         };
+        metrics::gauge!("napo_rooms_total", "phase" => phase.label()).increment(1.0);
         Self {
             id: snapshot.room_id,
             host: snapshot.host,
@@ -327,6 +340,12 @@ impl Room {
         }
     }
 
+    fn transition_phase(&mut self, new_phase: LocalPhase) {
+        metrics::gauge!("napo_rooms_total", "phase" => self.phase.label()).decrement(1.0);
+        metrics::gauge!("napo_rooms_total", "phase" => new_phase.label()).increment(1.0);
+        self.phase = new_phase;
+    }
+
     pub async fn run(mut self) {
         tracing::info!(room = %self.id, host = %self.host, "room actor started");
         let mut tick = interval(Duration::from_secs(1));
@@ -350,6 +369,7 @@ impl Room {
         }
         // クリーンアップ: 終了状態 / 全員退室で snapshot を消す
         self.unpersist().await;
+        metrics::gauge!("napo_rooms_total", "phase" => self.phase.label()).decrement(1.0);
         tracing::info!(room = %self.id, "room actor exiting");
     }
 
@@ -698,7 +718,7 @@ impl Room {
         let observations = session.observations_for_all();
 
         self.session = Some(session);
-        self.phase = LocalPhase::Playing;
+        self.transition_phase(LocalPhase::Playing);
         self.current_hand_started_at = Some(now_unix());
         tracing::info!(room = %self.id, ?assignments, "match started");
 
@@ -741,8 +761,11 @@ impl Room {
         let Some(session) = self.session.as_mut() else {
             return;
         };
+        let t0 = Instant::now();
         match session.apply(&player, action) {
             Ok(outcome) => {
+                metrics::histogram!("napo_action_apply_duration_seconds")
+                    .record(t0.elapsed().as_secs_f64());
                 self.dispatch_outcome(outcome).await;
                 self.persist().await;
                 self.drive_coms().await;
@@ -887,7 +910,7 @@ impl Room {
         match session.start_next_hand() {
             Ok(out) => {
                 self.next_ready.clear();
-                self.phase = LocalPhase::Playing;
+                self.transition_phase(LocalPhase::Playing);
                 self.current_hand_started_at = Some(now_unix());
                 self.dispatch_outcome(out).await;
                 // BetweenHands → Playing の遷移を client にも伝える(これが無いと
@@ -956,7 +979,7 @@ impl Room {
         .await;
 
         if match_finished {
-            self.phase = LocalPhase::Ended;
+            self.transition_phase(LocalPhase::Ended);
             self.broadcast(ServerMessage::MatchEnded {
                 final_scores: cumulative,
             })
@@ -964,7 +987,7 @@ impl Room {
             self.broadcast_room_state().await;
             self.unpersist().await;
         } else {
-            self.phase = LocalPhase::BetweenHands;
+            self.transition_phase(LocalPhase::BetweenHands);
             self.next_ready.clear();
             self.broadcast_room_state().await;
             self.persist().await;
@@ -1012,7 +1035,7 @@ impl Room {
             .map(|s| s.cumulative_scores())
             .unwrap_or_default();
         tracing::info!(room = %self.id, %reason, ?final_scores, "match ended early");
-        self.phase = LocalPhase::Ended;
+        self.transition_phase(LocalPhase::Ended);
         self.broadcast(ServerMessage::MatchEnded { final_scores })
             .await;
         self.broadcast_room_state().await;
@@ -1057,7 +1080,7 @@ impl Room {
                 })
                 .await;
                 if outcome.match_finished {
-                    self.phase = LocalPhase::Ended;
+                    self.transition_phase(LocalPhase::Ended);
                     self.broadcast(ServerMessage::MatchEnded {
                         final_scores: cumulative,
                     })
@@ -1067,7 +1090,7 @@ impl Room {
                     return;
                 }
             }
-            self.phase = LocalPhase::BetweenHands;
+            self.transition_phase(LocalPhase::BetweenHands);
             self.next_ready.clear();
             self.broadcast_room_state().await;
             self.persist().await;
@@ -1105,6 +1128,7 @@ impl Room {
         if let Err(e) = self.db.record_game_end(&game_id, outcome).await {
             tracing::warn!(error = %e, "record_game_end failed");
         } else {
+            metrics::counter!("napo_games_finished_total").increment(1);
             tracing::info!(room = %self.id, %game_id, "hand persisted");
         }
     }

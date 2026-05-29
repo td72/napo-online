@@ -15,6 +15,9 @@ async fn main() -> Result<()> {
     let cfg = Arc::new(Config::from_env()?);
     init_tracing(&cfg.log);
 
+    let metrics = napo_online::metrics::install();
+    napo_online::metrics::spawn_process_metrics_task();
+
     let verifier = build_verifier(&cfg).await?;
     let db = Db::open(&cfg.db_path).await?;
     db.migrate().await?;
@@ -29,6 +32,7 @@ async fn main() -> Result<()> {
         verifier,
         hub,
         db,
+        metrics,
     };
 
     tracing::info!(

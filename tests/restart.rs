@@ -51,6 +51,7 @@ async fn spawn_server_with_db(db: Db) -> ServerHandle {
     let hub = Hub::new(cfg.max_rooms, cfg.hands_per_match, db.clone(), timers);
     let state = AppState {
         cfg: cfg.clone(),
+        metrics: napo_online::metrics::install_once(),
         verifier: None,
         hub,
         db,
