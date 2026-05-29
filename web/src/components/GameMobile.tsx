@@ -14,6 +14,7 @@ import { belongsToLead, type SuitKey, SUITS, parseCard } from "./card-shared";
 import { Suit, TrumpCard } from "./Card";
 import { Avatar, DisconnectedBadge } from "./Player";
 import type { FieldSeatPos, GamePcViewModel } from "./GamePC";
+import { LastTrickPreview } from "./GamePC";
 
 export interface GameMobileProps {
   vm: GamePcViewModel;
@@ -65,6 +66,13 @@ export function GameMobile({
           padding: "8px 12px",
         }}
       >
+        {vm.lastTrick && (
+          <div
+            style={{ position: "absolute", top: 4, right: 8, zIndex: 5 }}
+          >
+            <LastTrickPreview lastTrick={vm.lastTrick} popupDir="down" />
+          </div>
+        )}
         {vm.trick.length > 0 ? <Field vm={vm} /> : <FieldIdle />}
       </div>
 

@@ -5,6 +5,7 @@
 // Phase E で Zustand store + observation から viewModel を派生させる。
 
 import type { CSSProperties } from "react";
+import { useState } from "react";
 import { belongsToLead, type SuitKey, SUITS, parseCard } from "./card-shared";
 import { Suit, TrumpCard } from "./Card";
 import { PlayerBadge } from "./Player";
@@ -92,6 +93,14 @@ export interface GamePcViewModel {
   totalGames: number;
   trickNo: number;
   totalTricks: number;
+  /**
+   * 直前 trick の 5 枚 + 勝者情報。hand 1 trick 目(completed === 0)は null。
+   * napoleon の記憶要件のため直前 1 trick のみ保持。
+   */
+  lastTrick: {
+    plays: Array<{ card: string; player: string; pos: FieldSeatPos; isWinner: boolean }>;
+    winnerName: string;
+  } | null;
 }
 
 export interface GamePCProps {
@@ -354,6 +363,12 @@ function TopBar({ vm }: { vm: GamePcViewModel }) {
             {vm.bidValue}
           </span>
         </div>
+        {vm.lastTrick && (
+          <>
+            <Sep />
+            <LastTrickPreview lastTrick={vm.lastTrick} popupDir="down" />
+          </>
+        )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -798,3 +813,142 @@ const iconBtn: CSSProperties = {
   cursor: "pointer",
   borderRadius: 6,
 };
+
+export type LastTrickVM = NonNullable<GamePcViewModel["lastTrick"]>;
+
+export function LastTrickPreview({
+  lastTrick,
+  popupDir = "down",
+}: {
+  lastTrick: LastTrickVM;
+  popupDir?: "up" | "down";
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onClick={() => setOpen((v) => !v)}
+    >
+      <div
+        data-testid="last-trick-preview"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          background: "var(--bg-secondary)",
+          border: "1px solid var(--border-color)",
+          borderRadius: "var(--radius-sm)",
+          padding: "3px 6px",
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 9,
+            letterSpacing: 0.5,
+            color: "var(--text-muted)",
+            fontWeight: 600,
+          }}
+        >
+          前
+        </span>
+        <div style={{ display: "flex", gap: 1 }}>
+          {lastTrick.plays.map((p) => (
+            <div
+              key={p.card}
+              style={{ position: "relative", opacity: p.isWinner ? 1 : 0.8 }}
+            >
+              <TrumpCard code={p.card} w={20} h={28} />
+              {p.isWinner && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: -4,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    fontSize: 7,
+                    lineHeight: 1,
+                    color: "var(--accent-primary)",
+                  }}
+                >
+                  ▲
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--text-secondary)",
+            whiteSpace: "nowrap",
+            maxWidth: 56,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {lastTrick.winnerName}
+        </span>
+      </div>
+
+      {open && (
+        <div
+          data-testid="last-trick-expanded"
+          style={{
+            position: "absolute",
+            ...(popupDir === "down"
+              ? { top: "calc(100% + 6px)", left: 0 }
+              : { bottom: "calc(100% + 6px)", left: 0 }),
+            zIndex: 30,
+            background: "var(--bg-secondary)",
+            border: "1px solid var(--border-color)",
+            borderRadius: "var(--radius-md)",
+            padding: "10px 12px",
+            boxShadow: "var(--shadow-lg)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            minWidth: 220,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              letterSpacing: 1,
+              color: "var(--text-muted)",
+            }}
+          >
+            PREV TRICK
+          </span>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            {lastTrick.plays.map((p) => (
+              <div
+                key={p.card}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}
+              >
+                <TrumpCard code={p.card} w={40} h={58} />
+                <span
+                  style={{
+                    fontSize: 9,
+                    color: p.isWinner ? "var(--accent-primary)" : "var(--text-secondary)",
+                    fontWeight: p.isWinner ? 700 : 400,
+                    whiteSpace: "nowrap",
+                    maxWidth: 44,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {p.isWinner ? "★" : ""}{p.player}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

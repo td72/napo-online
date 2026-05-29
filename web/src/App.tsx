@@ -1580,6 +1580,16 @@ function GamePreview() {
     totalGames: 10,
     trickNo: 4,
     totalTricks: 10,
+    lastTrick: {
+      plays: [
+        { card: "D7", player: "ミナト", pos: "tl", isWinner: false },
+        { card: "CQ", player: "アオイ", pos: "br", isWinner: false },
+        { card: "HA", player: "ナギ", pos: "bl", isWinner: true },
+        { card: "HK", player: "リオ", pos: "tr", isWinner: false },
+        { card: "H8", player: "ハル", pos: "self", isWinner: false },
+      ],
+      winnerName: "ナギ",
+    },
   };
 
   const waitVm: GamePcViewModel = { ...baseVm, phase: "wait" };
